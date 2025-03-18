@@ -3,7 +3,7 @@ import struct
 import cv2
 import numpy as np 
 
-HOST = "192.168.0.8"
+HOST = "192.168.219.114"
 PORT = 8080
 
 class Client():
@@ -15,11 +15,11 @@ class Client():
         self.clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.clientSocket.connect((self.HOST, self.PORT))
         print(f"{HOST} is connected")
-        self.clientSocket.send(b"SM\n")
         
         buffer = b""
         chunk = 4096
         while True:
+            self.clientSocket.send(b"SM\n")
             data = self.clientSocket.recv(chunk)
             if data is None:
                 break
@@ -41,8 +41,8 @@ class Client():
                 
                 img = cv2.imdecode(img, cv2.IMREAD_COLOR)
                 cv2.imshow("img", img)
-                cv2.waitKey(0.01)
-                cv2.destroyAllWindows()
+                cv2.waitKey(1)
+        cv2.destroyAllWindows()
         
         self.clientSocket.close()
         

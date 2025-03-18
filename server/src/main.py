@@ -1,13 +1,18 @@
-from server import Server
+from server import *
 import threading
 
-def serverThread():
-    server = Server("192.168.0.8", 8080)
-    server.startServer()
+host = "192.168.219.114"
+guiPort = 8080
+espPort = 8081
     
 def main():
-    serverThreadInstance = threading.Thread(target=serverThread(), daemon=True)
-    serverThreadInstance.start()
-    
+    manager = SocketManager()
+    guiSocket = GUISocketHandler(host, guiPort)
+    espSocket = ESPSocketHandler(host, espPort)
+    manager.setHandlers(guiSocket, espSocket)
+    guiSocket.start()
+    espSocket.start()
+    while True:
+        pass
 if __name__ == "__main__":
     main()

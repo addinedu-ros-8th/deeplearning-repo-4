@@ -5,75 +5,120 @@ from Camera import Camera
 import cv2
 import numpy as np
 
-class CommandHandler:
-    def __init__(self, clientSocket:socket.socket):
-        self.clientSocket = clientSocket
+class SocketHandler:
+    def __init__(self, host, port, manager=None):
+        self.host = host
+        self.port = port
+        self.manager = manager
+        self.socketName = "Socket"
         
-    def processData(self, data):
-        if data[:2] == b"SM":
-            self.processSM()
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind((self.host, self.port))
+        self.server.listen(5)
     
-    def processSM(self):
-        webcam = Camera(cv2.VideoCapture(0))
-        img = webcam.getImg()
-        if img is None:
-            print("No image")
-            return
+    def start(self):
+        threading.Thread(target=self.listen, daemon=True).start()
         
-        ret, buffer = cv2.imencode(".jpg", img)
-        imgData = buffer.tobytes()
-        imgDataLength = len(imgData)
+    def listen(self):
+        print(f"{self.socketName} is connecting..")
+        self.client, addr = self.server.accept()
+        print(f"{self.socketName} is connected : {addr}")
         
-        dataToSend = struct.pack(f"<2sI{imgDataLength}s", b"SM", imgDataLength, imgData)
-        print("Send: ", imgDataLength)
-        self.clientSocket.send(dataToSend)
+    def send(self, data):
+        if self.client:
+            self.client.send(data)
+
+class GUISocketHandler(SocketHandler):
+    def __init__(self, host, port, manager=None):
+        super().__init__(host, port, manager)
+        self.socketName = "GUI Socket"
+        self.webcam = Camera(cv2.VideoCapture(0))
         
-class Server():
-    def __init__(self, HOST="0.0.0.0", PORT=8080):
-        self.HOST = HOST
-        self.PORT = PORT
-        
-    def handleClient(self, clientSocket):
-        cmdHandler = CommandHandler(clientSocket)
+    def listen(self):
+        print(f"{self.socketName} is connecting..")
+        self.client, addr = self.server.accept()
+        print(f"{self.socketName} is connected : {addr}")
         buffer = b""
         while True:
             try:
-                if self.isClientDisconnected(clientSocket):
-                    print(f"{clientSocket} is Disconnected.")
+                data = self.client.recv(1024)
+                if not data:
                     break
-                data = clientSocket.recv(1024)
-
-                buffer += data
                 
-                while b'\n' in data:
+                buffer += data
+                while b'\n' in buffer:
                     cmd, buffer = data.split(b'\n', 1)
                     print(f"Received: {cmd}")
-                    cmdHandler.processData(cmd)                
-                
+                    self.processData(cmd)
             except Exception as e:
                 print(f"Error: {e}")
-                clientSocket.close()
+                self.client.close()
                 break
-    def isClientDisconnected(self, clientSocket):
-        try:
-            data = clientSocket.recv(1024, socket.MSG_PEEK)
-            return len(data) == 0
-        except socket.error:
-            return True
-    
-    def startServer(self):
-        self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.serverSocket.bind((self.HOST, self.PORT))
-        self.serverSocket.listen(5)
-        print(f"Server is waiting at {self.HOST}:{self.PORT}..")
+            
+    def processData(self, data):
+        if data[:2] == b"SM":
+            img = self.webcam.getImg()
+            if img is None:
+                print("No image")
+                return
+            ret, buffer = cv2.imencode(".jpg", img)
+            imgData = buffer.tobytes()
+            imgDataLength = len(imgData)
+            
+            dataToSend = struct.pack(f"<2sI{imgDataLength}s", b"SM", imgDataLength, imgData)
+            print("Send: ", imgDataLength)
+            self.send(dataToSend)
+            
+class ESPSocketHandler(SocketHandler):
+    def __init__(self, host, port, manager):
+        super().__init__(host, port, manager)
+        self.socketName = "ESP Socket"
         
+    def listen(self):
+        print(f"{self.socketName} is connecting..")
+        self.client, addr = self.server.accept()
+        print(f"{self.socketName} is connected : {addr}")
+        buffer = b""
         while True:
-            clientSocket, clientAddress = self.serverSocket.accept()
-            print(f"{clientAddress} is connected.")
+            try:
+                data = self.client.recv(1)
+                if not data:
+                    break
+                
+                buffer += data
+                while b'\n' in buffer:
+                    cmd, buffer = data.split(b'\n', 1)
+                    print(f"Received: {cmd}")
+                    self.processData(cmd)
+            except Exception as e:
+                print(f"Error: {e}")
+                self.client.close()
+                break
             
-            clientHandler = threading.Thread(target = self.handleClient, args = (clientSocket, ))
-            clientHandler.start()
+    def processData(self, data):
+        if data[:2] == b"SM":
+            data = self.client.recv(4)
+            imgDataLength = struct.unpack("<I", data)[0]
+            imgData = data.recv(imgDataLength)
             
-    def processData(data):
-        pass
+            img = np.fromstring(imgData, np.int8)
+            img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+            cv2.imshow("img", img)
+            cv2.waitKey(1)
+            
+class SocketManager:
+    def __init__(self):
+        self.guiHandler = None
+        self.espHandler = None
         
+    def setHandlers(self, guiHandler, espHandler):
+        self.guiHandler = guiHandler
+        self.espHandler = espHandler
+        
+    def SendToESP(self, data):
+        if self.espHandler:
+            self.espHandler.send(data)
+
+    def SendToGUI(self, data):
+        if self.guiHandler:
+            self.guiHandler.send(data)
