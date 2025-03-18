@@ -7,14 +7,15 @@ import time
 import cv2, imutils
 import urllib.request
 import threading
-import serial
 import struct
 import socket
+from threading import Thread
+import numpy as np
 
 # from log import Log
 # from manual import Manual
 
-HOST = '192.168.0.6'
+HOST = '192.168.0.8'
 PORT = 8080
 
 main = uic.loadUiType("./main.ui")[0]
@@ -25,42 +26,55 @@ log = uic.loadUiType("./log.ui")[0]
 
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 class Client():
-    def __init__(self, HOST="0.0.0.0", PORT=8080):
+    def __init__(self, HOST="0.0.0.0", PORT=8080, callback=None):
         self.HOST = HOST
         self.PORT = PORT
-
-    
+        self.callback = callback
     def startClient(self):
         self.clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.clientSocket.connect((self.HOST, self.PORT))
+        cameraThread = Camera(self.clientSocket)
+        cameraThread.start()
+        buffer = b""
+        chunk = 25000
         while True : # main or manual is open 
-            n = "SM\n"
-            self.clientSocket.sendall(n.encode())
-
-            data = b""  
-            while True:  
-                chunk = self.clientSocket.recv(4096)  
-                if not chunk:  
-                    print("Server closed connection")  
-                    return  
-                data += chunk  
-                if b"\n" in chunk:  
-                    break
-            print(f"Received {len(data)} bytes:", data[:20])
+            self.stream = None
+            data = self.clientSocket.recv(chunk)
+            if data is None:
+                break
+            if data[:2] == b"SM":
+                imgDataLength = struct.unpack("<I", data[2:6])[0]
+                remainLength = imgDataLength - chunk + 6
+                imgData = data[6:chunk]
+                
+                while True:
+                    if chunk <= remainLength:
+                        remainLength -= chunk
+                        data = self.clientSocket.recv(chunk)
+                        imgData += data
+                    else:
+                        data = self.clientSocket.recv(remainLength)
+                        imgData += data
+                        break
+                
+                img = np.fromstring(imgData, np.int8)
+                img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+                if self.callback:
+                    self.callback(img)
+            
+        self.clientSocket.close()
         
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-class Camera(QThread):
-    update = pyqtSignal()
-
-    def __init__(self, sec=0, parent = None):
+class Camera(Thread):
+    def __init__(self, clientSocket, parent = None):
         super().__init__()
         self.main = parent
+        self.clientSocket = clientSocket
         self.running = True
 
     def run(self):
-        while self.running == True:
-            self.update.emit()
-            time.sleep(0.048)
+        while self.running:
+            self.clientSocket.send(b"SM\n")
 
     def stop(self):
         self.running = False
@@ -74,17 +88,9 @@ class  Main (QMainWindow, main):
         self.pixmap = QPixmap()
 
         #send command
-        self.client = Client(HOST, PORT)
+        self.client = Client(HOST, PORT, callback = self.updateCamera)
         threading.Thread(target=self.client.startClient, daemon=True).start()
-    
-        #camera setting
-        self.isCameraOn = True
-        self.pixmap = QPixmap()
-        self.cameraBox = Camera(self)
-        self.cameraBox.daemon = True
-        self.cameraBox.update.connect(self.updateCamera)
-        
-        
+
         #move the page
         self.btn_manual.clicked.connect(self.openManualMode) 
         self.btn_history.clicked.connect(self.openLog)
@@ -120,23 +126,15 @@ class  Main (QMainWindow, main):
         self.log_window.show()
     
     
-    def updateCamera(self):
-        retval, image = self.video.read()
+    def updateCamera(self, image):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        h, w, c = image.shape
+        qimage = QImage(image.data, w, h, w*c, QImage.Format_RGB888)
 
-        if retval:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        self.pixmap = self.pixmap.fromImage(qimage)
+        self.pixmap = self.pixmap.scaled(self.cameraBox.width(), self.cameraBox.height())
 
-            h, w, c = image.shape
-            qimage = QImage(image.data, w, h, w*c, QImage.Format_RGB888)
-
-            self.pixmap = self.pixmap.fromImage(qimage)
-            self.pixmap = self.pixmap.scaled(self.cameraBox.width(), self.cameraBox.height())
-
-            self.cameraBox.setPixmap(self.pixmap)
-
-
-
-
+        self.cameraBox.setPixmap(self.pixmap)
 
 
     ''' change the text box of color when it violated '''
