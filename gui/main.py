@@ -90,10 +90,10 @@ class  Main (QMainWindow, main):
         self.btn_history.clicked.connect(self.openLog)
 
         #time update
-        # self.timer = QTimer(self)
-        # self.timer.timeout.connect(self.update_time)
-        # self.timer.start(1000)
-        # #self.update_time()
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.updateTime)
+        self.timer.start(1000)
+        self.updateTime()
 
         #label box
         warningLabel = [self.safetyHat, self.securityChain, self.safetyGlass, self.weldingHelmet, 
@@ -118,6 +118,11 @@ class  Main (QMainWindow, main):
     def openLog(self):
         self.log_window = Log()
         self.log_window.show()
+
+
+    def updateTime(self):
+        currentDate = QDateTime.currentDateTime().toString("yyyy - MM - dd  hh:mm:ss")
+        self.dateTime.setText(currentDate)
     
     
     def updateCamera(self):
