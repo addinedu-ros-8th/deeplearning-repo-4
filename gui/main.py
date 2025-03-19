@@ -42,25 +42,25 @@ class Client():
             data = self.clientSocket.recv(chunk)
             if data is None:
                 break
-            if data[:2] == b"SM":
-                imgDataLength = struct.unpack("<I", data[2:6])[0]
-                remainLength = imgDataLength - chunk + 6
-                imgData = data[6:chunk]
-                
-                while True:
-                    if chunk <= remainLength:
-                        remainLength -= chunk
-                        data = self.clientSocket.recv(chunk)
-                        imgData += data
-                    else:
-                        data = self.clientSocket.recv(remainLength)
-                        imgData += data
-                        break
-                
-                img = np.fromstring(imgData, np.int8)
-                img = cv2.imdecode(img, cv2.IMREAD_COLOR)
-                if self.callback:
-                    self.callback(img)
+            buffer += data
+            while b'\n' in data:
+                cmd, data = data.split(b'\n', 1)
+                print("Recv: ", cmd)
+                if cmd[:2] == b"SM":
+                    imgDataLength = struct.unpack("<I", data[:4])[0]
+                    print(imgDataLength)
+                    imgData = data[4:]
+                    data = b""
+                    imgDataLength -= len(imgData)
+                    while imgDataLength > 0:
+                        cmd = self.client.recv(min(1024, imgDataLength))
+                        imgData += cmd
+                        imgDataLength -= len(cmd)
+                    
+                    img = np.fromstring(imgData, np.int8)
+                    img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+                    if self.callback:
+                        self.callback(img)
             
         self.clientSocket.close()
         
@@ -75,6 +75,7 @@ class Camera(Thread):
     def run(self):
         while self.running:
             self.clientSocket.send(b"SM\n")
+            time.sleep(0.2)
 
     def stop(self):
         self.running = False
