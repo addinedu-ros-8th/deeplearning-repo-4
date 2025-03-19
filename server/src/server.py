@@ -11,10 +11,15 @@ class SocketHandler:
         self.port = port
         self.manager = manager
         self.socketName = "Socket"
-        
+        self.connect()
+    
+    def connect(self):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.bind((self.host, self.port))
         self.server.listen(5)
+    
+    def reconnect(self):
+        self.listen()
     
     def start(self):
         threading.Thread(target=self.listen, daemon=True).start()
@@ -81,30 +86,41 @@ class ESPSocketHandler(SocketHandler):
         buffer = b""
         while True:
             try:
-                data = self.client.recv(1)
+                data = self.client.recv(1024)
                 if not data:
-                    break
-                
+                    print(f"{self.socketName} is disconnected")
+                    print("Reconnecting..")
+                    self.reconnect()
                 buffer += data
-                while b'\n' in buffer:
-                    cmd, buffer = data.split(b'\n', 1)
-                    print(f"Received: {cmd}")
-                    self.processData(cmd)
+                
+                buffer = self.processData(buffer)
             except Exception as e:
                 print(f"Error: {e}")
                 self.client.close()
                 break
             
     def processData(self, data):
-        if data[:2] == b"SM":
-            data = self.client.recv(4)
-            imgDataLength = struct.unpack("<I", data)[0]
-            imgData = data.recv(imgDataLength)
-            
-            img = np.fromstring(imgData, np.int8)
-            img = cv2.imdecode(img, cv2.IMREAD_COLOR)
-            cv2.imshow("img", img)
-            cv2.waitKey(1)
+        while b'\n' in data:
+            cmd, data = data.split(b'\n', 1)
+            if cmd[:2] == b"SM":
+                imgDataLength = struct.unpack("<I", data[:4])[0]
+                print(imgDataLength)
+                imgData = data[4:]
+                data = b""
+                imgDataLength -= len(imgData)
+                while imgDataLength > 0:
+                    cmd = self.client.recv(min(1024, imgDataLength))
+                    imgData += cmd
+                    imgDataLength -= len(cmd)
+                
+                img = np.frombuffer(imgData, np.uint8)
+                print(len(img))
+                img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+                
+                cv2.imshow("img", img)
+                cv2.waitKey(1)
+                
+        return data
             
 class SocketManager:
     def __init__(self):
