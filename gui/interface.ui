@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>833</width>
+    <width>846</width>
     <height>479</height>
    </rect>
   </property>
@@ -14,6 +14,39 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
+   <property name="styleSheet">
+    <string notr="true">#centralwidget QWidget{
+	border-radius: 5px;
+	background-color: black;
+	color: white;
+}
+#frame_3 QLabel{
+	background-color: #6BE6D6;
+	color: black;
+}
+#frame_4 QPushButton{
+	padding: 10px;
+	border-radius: 5px;
+	background-color: #A6F0E6;
+	color: black;
+}
+#frame_4 QPushButton:hover{
+	background-color: #95D8CF;
+	color: black;
+}
+#frame_27 QTableWidget{
+	border-radius: 10px;
+	background-color: #CEEDE9;
+	color: black;
+}
+#frame_27 QFrame{
+	background-color: #CEEDE9;
+	color: black;
+}
+#frame_20 QLabel{
+	color: black;
+}</string>
+   </property>
    <layout class="QHBoxLayout" name="horizontalLayout">
     <item>
      <widget class="QFrame" name="frame">
@@ -38,14 +71,17 @@
             <property name="font">
              <font>
               <family>URW Bookman [urw]</family>
-              <pointsize>12</pointsize>
-              <weight>50</weight>
+              <pointsize>13</pointsize>
+              <weight>75</weight>
               <italic>false</italic>
-              <bold>false</bold>
+              <bold>true</bold>
              </font>
             </property>
             <property name="text">
              <string>Safetify</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
             </property>
            </widget>
           </item>
@@ -62,42 +98,72 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_2">
           <item>
-           <widget class="QPushButton" name="pushButton_5">
+           <widget class="QPushButton" name="btn1">
+            <property name="font">
+             <font>
+              <family>Sans Serif</family>
+             </font>
+            </property>
             <property name="text">
              <string>Main</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_4">
+           <widget class="QPushButton" name="btn2">
+            <property name="font">
+             <font>
+              <family>Sans Serif</family>
+             </font>
+            </property>
             <property name="text">
              <string>Work Part</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_3">
+           <widget class="QPushButton" name="btn3">
+            <property name="font">
+             <font>
+              <family>Sans Serif</family>
+             </font>
+            </property>
             <property name="text">
              <string>Equipments</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_2">
+           <widget class="QPushButton" name="btn4">
+            <property name="font">
+             <font>
+              <family>Sans Serif</family>
+             </font>
+            </property>
             <property name="text">
              <string>Monthly</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton">
+           <widget class="QPushButton" name="btn5">
+            <property name="font">
+             <font>
+              <family>Sans Serif</family>
+             </font>
+            </property>
             <property name="text">
              <string>Safety Rule</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_6">
+           <widget class="QPushButton" name="btn6">
+            <property name="font">
+             <font>
+              <family>Sans Serif</family>
+             </font>
+            </property>
             <property name="text">
              <string>Report Log</string>
             </property>
@@ -129,8 +195,13 @@
          <layout class="QVBoxLayout" name="verticalLayout_4">
           <item>
            <widget class="QStackedWidget" name="stackedWidget">
+            <property name="font">
+             <font>
+              <pointsize>15</pointsize>
+             </font>
+            </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>1</number>
             </property>
             <widget class="QWidget" name="page">
              <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -154,6 +225,7 @@
                    <property name="font">
                     <font>
                      <family>Serif</family>
+                     <pointsize>15</pointsize>
                      <weight>75</weight>
                      <italic>false</italic>
                      <bold>true</bold>
@@ -220,9 +292,9 @@
                          </property>
                          <layout class="QGridLayout" name="gridLayout_5">
                           <item row="0" column="0">
-                           <widget class="QLabel" name="label_10">
+                           <widget class="QLabel" name="box_gray">
                             <property name="text">
-                             <string>Work</string>
+                             <string/>
                             </property>
                            </widget>
                           </item>
@@ -237,43 +309,25 @@
                          <property name="frameShadow">
                           <enum>QFrame::Raised</enum>
                          </property>
-                         <layout class="QHBoxLayout" name="horizontalLayout_8">
+                         <layout class="QHBoxLayout" name="horizontalLayout_3">
                           <item>
-                           <widget class="QFrame" name="frame_21">
-                            <property name="frameShape">
-                             <enum>QFrame::StyledPanel</enum>
+                           <widget class="QLabel" name="box_green">
+                            <property name="text">
+                             <string/>
                             </property>
-                            <property name="frameShadow">
-                             <enum>QFrame::Raised</enum>
+                            <property name="alignment">
+                             <set>Qt::AlignCenter</set>
                             </property>
-                            <layout class="QGridLayout" name="gridLayout_3">
-                             <item row="0" column="0">
-                              <widget class="QLabel" name="box_green">
-                               <property name="text">
-                                <string/>
-                               </property>
-                              </widget>
-                             </item>
-                            </layout>
                            </widget>
                           </item>
                           <item>
-                           <widget class="QFrame" name="frame_22">
-                            <property name="frameShape">
-                             <enum>QFrame::StyledPanel</enum>
+                           <widget class="QLabel" name="box_red">
+                            <property name="text">
+                             <string/>
                             </property>
-                            <property name="frameShadow">
-                             <enum>QFrame::Raised</enum>
+                            <property name="alignment">
+                             <set>Qt::AlignCenter</set>
                             </property>
-                            <layout class="QGridLayout" name="gridLayout_4">
-                             <item row="0" column="0">
-                              <widget class="QLabel" name="box_red">
-                               <property name="text">
-                                <string/>
-                               </property>
-                              </widget>
-                             </item>
-                            </layout>
                            </widget>
                           </item>
                          </layout>
@@ -290,7 +344,7 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="page_2">
+            <widget class="QWidget" name="page2">
              <layout class="QGridLayout" name="gridLayout">
               <item row="0" column="0">
                <widget class="QFrame" name="frame_12">
@@ -305,7 +359,8 @@
                   <widget class="QLabel" name="label_5">
                    <property name="font">
                     <font>
-                     <family>URW Bookman [UKWN]</family>
+                     <family>Serif</family>
+                     <pointsize>15</pointsize>
                      <weight>75</weight>
                      <bold>true</bold>
                     </font>
@@ -332,6 +387,15 @@
                    <property name="frameShadow">
                     <enum>QFrame::Raised</enum>
                    </property>
+                   <layout class="QGridLayout" name="gridLayout_4">
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="workChart">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
                   </widget>
                  </item>
                 </layout>
@@ -339,7 +403,7 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="page_3">
+            <widget class="QWidget" name="page3">
              <layout class="QVBoxLayout" name="verticalLayout_7">
               <item>
                <widget class="QFrame" name="frame_15">
@@ -352,6 +416,14 @@
                 <layout class="QVBoxLayout" name="verticalLayout_9">
                  <item alignment="Qt::AlignTop">
                   <widget class="QLabel" name="label_6">
+                   <property name="font">
+                    <font>
+                     <family>Serif</family>
+                     <pointsize>15</pointsize>
+                     <weight>75</weight>
+                     <bold>true</bold>
+                    </font>
+                   </property>
                    <property name="text">
                     <string>Violation Rate by Equipments</string>
                    </property>
@@ -381,7 +453,7 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="page_4">
+            <widget class="QWidget" name="page4">
              <layout class="QGridLayout" name="gridLayout_6">
               <item row="0" column="0">
                <widget class="QFrame" name="frame_7">
@@ -394,6 +466,14 @@
                 <layout class="QVBoxLayout" name="verticalLayout_11">
                  <item alignment="Qt::AlignTop">
                   <widget class="QLabel" name="label_11">
+                   <property name="font">
+                    <font>
+                     <family>Serif</family>
+                     <pointsize>15</pointsize>
+                     <weight>75</weight>
+                     <bold>true</bold>
+                    </font>
+                   </property>
                    <property name="text">
                     <string>Violation Rate by Months</string>
                    </property>
@@ -423,7 +503,7 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="page_5">
+            <widget class="QWidget" name="page5">
              <layout class="QGridLayout" name="gridLayout_7">
               <item row="0" column="0">
                <widget class="QFrame" name="frame_24">
@@ -436,6 +516,14 @@
                 <layout class="QVBoxLayout" name="verticalLayout_12">
                  <item alignment="Qt::AlignTop">
                   <widget class="QLabel" name="label_12">
+                   <property name="font">
+                    <font>
+                     <family>Serif</family>
+                     <pointsize>15</pointsize>
+                     <weight>75</weight>
+                     <bold>true</bold>
+                    </font>
+                   </property>
                    <property name="text">
                     <string>Safety Rule</string>
                    </property>
@@ -458,6 +546,49 @@
                    <property name="frameShadow">
                     <enum>QFrame::Raised</enum>
                    </property>
+                   <layout class="QHBoxLayout" name="horizontalLayout_4">
+                    <item>
+                     <widget class="QLabel" name="safetyLeft">
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>16777215</width>
+                        <height>16777215</height>
+                       </size>
+                      </property>
+                      <property name="frameShape">
+                       <enum>QFrame::NoFrame</enum>
+                      </property>
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="safetyRight">
+                      <property name="frameShape">
+                       <enum>QFrame::NoFrame</enum>
+                      </property>
+                      <property name="frameShadow">
+                       <enum>QFrame::Plain</enum>
+                      </property>
+                      <property name="midLineWidth">
+                       <number>0</number>
+                      </property>
+                      <property name="text">
+                       <string/>
+                      </property>
+                      <property name="alignment">
+                       <set>Qt::AlignJustify|Qt::AlignVCenter</set>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
                   </widget>
                  </item>
                 </layout>
@@ -465,7 +596,7 @@
               </item>
              </layout>
             </widget>
-            <widget class="QWidget" name="page_6">
+            <widget class="QWidget" name="page6">
              <layout class="QGridLayout" name="gridLayout_8">
               <item row="0" column="0">
                <widget class="QFrame" name="frame_26">
@@ -481,6 +612,7 @@
                    <property name="font">
                     <font>
                      <family>Serif</family>
+                     <pointsize>15</pointsize>
                      <weight>75</weight>
                      <bold>true</bold>
                     </font>
@@ -507,9 +639,9 @@
                    <property name="frameShadow">
                     <enum>QFrame::Raised</enum>
                    </property>
-                   <layout class="QVBoxLayout" name="verticalLayout_14">
-                    <item alignment="Qt::AlignVCenter">
-                     <widget class="QTableWidget" name="tableWidget">
+                   <layout class="QGridLayout" name="gridLayout_3">
+                    <item row="0" column="0">
+                     <widget class="QTableWidget" name="table">
                       <column>
                        <property name="text">
                         <string>Type</string>
@@ -560,7 +692,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>833</width>
+     <width>846</width>
      <height>24</height>
     </rect>
    </property>
