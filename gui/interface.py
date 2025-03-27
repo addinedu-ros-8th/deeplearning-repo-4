@@ -302,6 +302,11 @@ class  Interface(QMainWindow, interface):
                 self.local.close()
 
 
+
+
+
+
+
 class Receiver (QThread):
     detected = pyqtSignal(bytes)
 
