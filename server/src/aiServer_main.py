@@ -14,7 +14,8 @@ def main():
     manager.setHandlers(mainServerSocket, espSocket)
     espSocket.start()
     mainServerSocket.start()
+
     while True:
-        pass
+        manager.displayFrame()
 if __name__ == "__main__":
     main()
