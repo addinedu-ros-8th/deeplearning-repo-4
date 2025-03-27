@@ -204,7 +204,73 @@ class  Interface(QMainWindow, interface):
         layout = QVBoxLayout(self.page2)  # Use Page 2
         layout.addWidget(self.chart_view)
         self.workChart.setLayout(layout)
-       
+    
+
+    def statEquip(self):
+        self.page3 = self.stackedWidget.widget(2)  # Ensure it matches page index
+        set0 = QBarSet("안전모")
+        set1 = QBarSet("용접가면")
+        set2 = QBarSet("소화기")
+        set3 = QBarSet("불티산방지막")
+        set4 = QBarSet("적재물")
+        set5 = QBarSet("화재")
+        set6 = QBarSet("쓰러짐")
+
+        # count the data by work part
+        cur = self.local.cursor()
+        query = "SELECT s.EID, COUNT(*) AS eid_count FROM Report r JOIN SafeCase s ON r.SID = s.SID WHERE s.EID IN (1, 2, 3, 4, 5, 6, 7) GROUP BY s.EID ORDER BY s.EID;"
+        cur.execute(query)
+        results = cur.fetchall()
+
+        # Initialize counts to 0 in case some WIDs have no data
+        counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0}
+        for result in results:
+            eid = result[0]  
+            count = result[1]  # Count for that EID
+            counts[eid] = count
+
+        # Add data to the bar sets
+        set0.append(counts[1])
+        set1.append(counts[2])
+        set2.append(counts[3])
+        set3.append(counts[4])
+        set4.append(counts[5])
+        set5.append(counts[6])
+        set6.append(counts[7])
+
+        # Create series
+        series = QBarSeries()
+        series.append(set0)
+        series.append(set1)
+        series.append(set2)
+        series.append(set3)
+        series.append(set4)
+        series.append(set5)
+        series.append(set6)
+
+        # Create chart
+        self.chart = QChart()
+        self.chart.addSeries(series)
+        #self.chart.setTitle("Debug: Work Violation Stats")
+
+        # Add axes
+        categories = ["Q1"]
+        axisX = QBarCategoryAxis()
+        axisX.append(categories)
+        self.chart.setAxisX(axisX, series)
+
+        axisY = QValueAxis()
+        #axisY.setRange(0, 10)
+        self.chart.setAxisY(axisY, series)
+
+        self.chart_view = QChartView(self.chart)
+        
+        # ✅ Place Chart in Page 2
+        layout = QVBoxLayout(self.page3)  # Use Page 3
+        layout.addWidget(self.chart_view)
+        self.workChart.setLayout(layout)
+    
+
     
     ''' conver ID (int) to Name (string) '''
     def convertIDtoName(self, table, id):
