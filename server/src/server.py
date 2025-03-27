@@ -37,7 +37,6 @@ class GUISocketHandler(SocketHandler):
     def __init__(self, host, port, manager=None):
         super().__init__(host, port, manager)
         self.socketName = "GUI Socket"
-        self.webcam = Camera(cv2.VideoCapture(0))
         
     def listen(self):
         print(f"{self.socketName} is connecting..")
@@ -48,31 +47,24 @@ class GUISocketHandler(SocketHandler):
             try:
                 data = self.client.recv(1024)
                 if not data:
-                    break
-                
+                    print(f"{self.socketName} is disconnected")
+                    print("Reconnecting..")
+                    self.reconnect()
                 buffer += data
-                while b'\n' in buffer:
-                    cmd, buffer = data.split(b'\n', 1)
-                    print(f"Received: {cmd}")
-                    self.processData(cmd)
+                
+                buffer = self.processData(buffer)
             except Exception as e:
                 print(f"Error: {e}")
                 self.client.close()
                 break
             
     def processData(self, data):
-        if data[:2] == b"SM":
-            img = self.webcam.getImg()
-            if img is None:
-                print("No image")
-                return
-            ret, buffer = cv2.imencode(".jpg", img)
-            imgData = buffer.tobytes()
-            imgDataLength = len(imgData)
-            
-            dataToSend = struct.pack(f"<2sI{imgDataLength}s", b"SM", imgDataLength, imgData)
-            print("Send: ", imgDataLength)
-            self.send(dataToSend)
+        while b'\n' in data:
+            cmd, data = data.split(b'\n', 1)
+            print("Recv: ", cmd)
+            if cmd[:2] == b"SM":
+                self.manager.sendToESP(b"SM\n")
+        return data
             
 class ESPSocketHandler(SocketHandler):
     def __init__(self, host, port, manager):
@@ -112,13 +104,7 @@ class ESPSocketHandler(SocketHandler):
                     cmd = self.client.recv(min(1024, imgDataLength))
                     imgData += cmd
                     imgDataLength -= len(cmd)
-                
-                img = np.frombuffer(imgData, np.uint8)
-                print(len(img))
-                img = cv2.imdecode(img, cv2.IMREAD_COLOR)
-                
-                cv2.imshow("img", img)
-                cv2.waitKey(1)
+                self.manager.sendToGUI(struct.pack(f"<3sI{len(imgData)}s", b"SM\n", len(imgData), imgData))
                 
         return data
             
@@ -131,10 +117,10 @@ class SocketManager:
         self.guiHandler = guiHandler
         self.espHandler = espHandler
         
-    def SendToESP(self, data):
+    def sendToESP(self, data):
         if self.espHandler:
             self.espHandler.send(data)
 
-    def SendToGUI(self, data):
+    def sendToGUI(self, data):
         if self.guiHandler:
             self.guiHandler.send(data)
