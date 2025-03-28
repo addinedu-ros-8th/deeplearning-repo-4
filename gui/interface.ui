@@ -45,6 +45,12 @@
 }
 #frame_20 QLabel{
 	color: black;
+}
+#frame_17 QLabel{
+	border-radius: 5px;
+	border: 2px solid white;
+}#frame_19 QLabel{
+	color:black;
 }</string>
    </property>
    <layout class="QHBoxLayout" name="horizontalLayout">
@@ -102,6 +108,8 @@
             <property name="font">
              <font>
               <family>Sans Serif</family>
+              <weight>75</weight>
+              <bold>true</bold>
              </font>
             </property>
             <property name="text">
@@ -114,6 +122,8 @@
             <property name="font">
              <font>
               <family>Sans Serif</family>
+              <weight>75</weight>
+              <bold>true</bold>
              </font>
             </property>
             <property name="text">
@@ -126,6 +136,8 @@
             <property name="font">
              <font>
               <family>Sans Serif</family>
+              <weight>75</weight>
+              <bold>true</bold>
              </font>
             </property>
             <property name="text">
@@ -138,10 +150,12 @@
             <property name="font">
              <font>
               <family>Sans Serif</family>
+              <weight>75</weight>
+              <bold>true</bold>
              </font>
             </property>
             <property name="text">
-             <string>Monthly</string>
+             <string>Daily</string>
             </property>
            </widget>
           </item>
@@ -150,6 +164,8 @@
             <property name="font">
              <font>
               <family>Sans Serif</family>
+              <weight>75</weight>
+              <bold>true</bold>
              </font>
             </property>
             <property name="text">
@@ -162,10 +178,12 @@
             <property name="font">
              <font>
               <family>Sans Serif</family>
+              <weight>75</weight>
+              <bold>true</bold>
              </font>
             </property>
             <property name="text">
-             <string>Report Log</string>
+             <string>Report</string>
             </property>
            </widget>
           </item>
@@ -201,7 +219,7 @@
              </font>
             </property>
             <property name="currentIndex">
-             <number>1</number>
+             <number>0</number>
             </property>
             <widget class="QWidget" name="page">
              <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -256,6 +274,12 @@
                    <layout class="QHBoxLayout" name="horizontalLayout_7">
                     <item>
                      <widget class="QFrame" name="frame_17">
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                        <horstretch>7</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
                       <property name="frameShape">
                        <enum>QFrame::StyledPanel</enum>
                       </property>
@@ -265,6 +289,30 @@
                       <layout class="QGridLayout" name="gridLayout_2">
                        <item row="0" column="0">
                         <widget class="QLabel" name="cameraLabel">
+                         <property name="enabled">
+                          <bool>true</bool>
+                         </property>
+                         <property name="sizePolicy">
+                          <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
+                           <horstretch>0</horstretch>
+                           <verstretch>0</verstretch>
+                          </sizepolicy>
+                         </property>
+                         <property name="maximumSize">
+                          <size>
+                           <width>700</width>
+                           <height>480</height>
+                          </size>
+                         </property>
+                         <property name="sizeIncrement">
+                          <size>
+                           <width>0</width>
+                           <height>0</height>
+                          </size>
+                         </property>
+                         <property name="frameShape">
+                          <enum>QFrame::NoFrame</enum>
+                         </property>
                          <property name="text">
                           <string/>
                          </property>
@@ -275,6 +323,12 @@
                     </item>
                     <item>
                      <widget class="QFrame" name="frame_18">
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                        <horstretch>3</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
                       <property name="frameShape">
                        <enum>QFrame::StyledPanel</enum>
                       </property>
@@ -293,8 +347,17 @@
                          <layout class="QGridLayout" name="gridLayout_5">
                           <item row="0" column="0">
                            <widget class="QLabel" name="box_gray">
+                            <property name="sizePolicy">
+                             <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                              <horstretch>0</horstretch>
+                              <verstretch>0</verstretch>
+                             </sizepolicy>
+                            </property>
                             <property name="text">
                              <string/>
+                            </property>
+                            <property name="alignment">
+                             <set>Qt::AlignCenter</set>
                             </property>
                            </widget>
                           </item>
@@ -366,7 +429,7 @@
                     </font>
                    </property>
                    <property name="text">
-                    <string>Violation Rate by Work Part</string>
+                    <string>Violation Amount by Work Part</string>
                    </property>
                    <property name="alignment">
                     <set>Qt::AlignCenter</set>
@@ -425,7 +488,7 @@
                     </font>
                    </property>
                    <property name="text">
-                    <string>Violation Rate by Equipments</string>
+                    <string>Violation Amount by Equipments</string>
                    </property>
                    <property name="alignment">
                     <set>Qt::AlignCenter</set>
@@ -446,6 +509,15 @@
                    <property name="frameShadow">
                     <enum>QFrame::Raised</enum>
                    </property>
+                   <layout class="QGridLayout" name="gridLayout_9">
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="equipChart">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
                   </widget>
                  </item>
                 </layout>
@@ -475,7 +547,7 @@
                     </font>
                    </property>
                    <property name="text">
-                    <string>Violation Rate by Months</string>
+                    <string>Daily Violation Amount</string>
                    </property>
                    <property name="alignment">
                     <set>Qt::AlignCenter</set>
@@ -496,6 +568,15 @@
                    <property name="frameShadow">
                     <enum>QFrame::Raised</enum>
                    </property>
+                   <layout class="QGridLayout" name="gridLayout_10">
+                    <item row="0" column="0">
+                     <widget class="QLabel" name="dailyChart">
+                      <property name="text">
+                       <string/>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
                   </widget>
                  </item>
                 </layout>
@@ -525,7 +606,7 @@
                     </font>
                    </property>
                    <property name="text">
-                    <string>Safety Rule</string>
+                    <string>⛑️ Safety Rule</string>
                    </property>
                    <property name="alignment">
                     <set>Qt::AlignCenter</set>
@@ -548,44 +629,90 @@
                    </property>
                    <layout class="QHBoxLayout" name="horizontalLayout_4">
                     <item>
-                     <widget class="QLabel" name="safetyLeft">
-                      <property name="sizePolicy">
-                       <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-                        <horstretch>0</horstretch>
-                        <verstretch>0</verstretch>
-                       </sizepolicy>
-                      </property>
-                      <property name="maximumSize">
-                       <size>
-                        <width>16777215</width>
-                        <height>16777215</height>
-                       </size>
-                      </property>
+                     <widget class="QFrame" name="frame_5">
                       <property name="frameShape">
-                       <enum>QFrame::NoFrame</enum>
+                       <enum>QFrame::StyledPanel</enum>
                       </property>
-                      <property name="text">
-                       <string/>
+                      <property name="frameShadow">
+                       <enum>QFrame::Raised</enum>
                       </property>
+                      <layout class="QVBoxLayout" name="verticalLayout_14">
+                       <item>
+                        <widget class="QLabel" name="rule1">
+                         <property name="font">
+                          <font>
+                           <family>Ubuntu Sans</family>
+                           <weight>50</weight>
+                           <bold>false</bold>
+                          </font>
+                         </property>
+                         <property name="text">
+                          <string/>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QLabel" name="rule2">
+                         <property name="font">
+                          <font>
+                           <family>Ubuntu Sans</family>
+                           <weight>50</weight>
+                           <bold>false</bold>
+                          </font>
+                         </property>
+                         <property name="text">
+                          <string/>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QLabel" name="rule3">
+                         <property name="font">
+                          <font>
+                           <family>Ubuntu Sans</family>
+                           <weight>50</weight>
+                           <bold>false</bold>
+                          </font>
+                         </property>
+                         <property name="text">
+                          <string/>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QLabel" name="rule4">
+                         <property name="font">
+                          <font>
+                           <family>Ubuntu Sans</family>
+                           <weight>50</weight>
+                           <bold>false</bold>
+                          </font>
+                         </property>
+                         <property name="text">
+                          <string/>
+                         </property>
+                        </widget>
+                       </item>
+                      </layout>
                      </widget>
                     </item>
                     <item>
-                     <widget class="QLabel" name="safetyRight">
+                     <widget class="QFrame" name="frame_8">
                       <property name="frameShape">
-                       <enum>QFrame::NoFrame</enum>
+                       <enum>QFrame::StyledPanel</enum>
                       </property>
                       <property name="frameShadow">
-                       <enum>QFrame::Plain</enum>
+                       <enum>QFrame::Raised</enum>
                       </property>
-                      <property name="midLineWidth">
-                       <number>0</number>
-                      </property>
-                      <property name="text">
-                       <string/>
-                      </property>
-                      <property name="alignment">
-                       <set>Qt::AlignJustify|Qt::AlignVCenter</set>
-                      </property>
+                      <layout class="QGridLayout" name="gridLayout_11">
+                       <item row="0" column="0">
+                        <widget class="QLabel" name="bono">
+                         <property name="text">
+                          <string/>
+                         </property>
+                        </widget>
+                       </item>
+                      </layout>
                      </widget>
                     </item>
                    </layout>
