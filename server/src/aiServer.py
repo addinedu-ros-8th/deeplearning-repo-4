@@ -15,14 +15,19 @@ class SocketManager:
         self.mainServerHandler = None
         self.espHandler = None
         
+        # Pose model
         self.mpPose = mp.solutions.pose
         self.pose = self.mpPose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        self.mp_drawing = mp.solutions.drawing_utils
+        self.mpDrawing = mp.solutions.drawing_utils
+        
+        self.fireDetection = YOLO("/home/tm/dev_ws/yolo/runs/detect/fire_detection/weights/fire_detection.pt").to("cuda")
         
         self.displayQueue = Queue()
         
         self.detectedEvent = set()
-        self.detectedTime
+        self.detectedTime = None
+        
+        self.bboxQueue = Queue()
         
     def setHandlers(self, mainServerHandler, espHandler):
         self.mainServerHandler = mainServerHandler
@@ -39,13 +44,27 @@ class SocketManager:
     def predictEvent(self, img):
         imgrgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         results = self.pose.process(imgrgb)
+        detectedFires = self.fireDetection.predict(img, conf=0.7)
+        
         newImg = img.copy()
         if results.pose_landmarks:
-            # 키포인트 그리기 (선택적)
-            self.mp_drawing.draw_landmarks(newImg, results.pose_landmarks, self.mpPose.POSE_CONNECTIONS)
+            self.mpDrawing.draw_landmarks(newImg, results.pose_landmarks, self.mpPose.POSE_CONNECTIONS)
             
-            # 키포인트 추출
             landmarks = results.pose_landmarks.landmark
+            
+            # Draw box on person
+            h, w, _ = img.shape
+            xCoords = [landmark.x * w for landmark in landmarks]
+            yCoords = [landmark.y * h for landmark in landmarks]
+            xMin, xMax = int(min(xCoords)), int(max(xCoords))
+            yMin, yMax = int(min(yCoords)), int(max(yCoords))
+            
+            padding = 20
+            xMin = max(0, xMin - padding)
+            yMin = max(0, yMin - padding)
+            xMax = min(w, xMax + padding)
+            yMax = min(h, yMax + padding)
+            
             shoulderXY = [(int(landmarks[i].x * img.shape[1]), int(landmarks[i].y * img.shape[0])) 
                           for i in [11, 12] if landmarks[i].visibility > 0.5]  # Left/Right Shoulder
             hipXY = [(int(landmarks[i].x * img.shape[1]), int(landmarks[i].y * img.shape[0])) 
@@ -58,23 +77,55 @@ class SocketManager:
             shoulderMid = np.mean(shoulderXY, axis=0).astype(int)
             hipMid = np.mean(hipXY, axis=0).astype(int)
             slope = abs((shoulderMid[1] - hipMid[1]) / (shoulderMid[0] - hipMid[0] + 1e-6))
-            cv2.line(newImg, tuple(shoulderMid), tuple(hipMid), (255, 0, 0), 2)
-            if slope < 0.5:
-                print("Lying")
-                durationTime = time.time() - self.detectedTime
-                if durationTime >= 5:
-                    pass
-            else:
-                print("Standing")
+            
+            try:
+                if slope < 0.3:
+                    cv2.rectangle(newImg, (xMin, yMin), (xMax, yMax), (0, 255, 255), 2)
+                    durationTime = time.time() - self.detectedTime
+                    print(durationTime)
+                    if durationTime >= 5:
+                        self.sendDetectCommand(0x31, 1, "사고", "쓰러짐")
+                        
+            except Exception:
+                if self.detectedTime == None:
+                    self.detectedTime = time.time()
         else:
             self.detectedTime = time.time()
+            self.sendDetectCommand(0x30, 1, "사고", "쓰러짐")
+            
+        for result in detectedFires:
+            if len(result.boxes) == 0:
+                self.sendDetectCommand(0x30, 1, "사고", "화재")
+                break
+            xyxy = result.boxes.xyxy
+            cv2.rectangle(newImg, (int(xyxy[0][0]), int(xyxy[0][1])), (int(xyxy[0][2]), int(xyxy[0][3])), (0, 0, 255), 2)
+            self.sendDetectCommand(0x31, 1, "사고", "화재")
+            
         return newImg
     
+    def sendDetectCommand(self, header, robotID, typeName, event):
+        if event in self.detectedEvent:
+            if header == 0x30:
+                self.detectedEvent.remove(event)
+            elif header == 0x31:
+                return
+        else:
+            if header == 0x30:
+                return
+            if header == 0x31:
+                self.detectedEvent.add(event)
+        joinedEvent = typeName + "+" + event
+        joinedEvent = joinedEvent.encode("utf-8")
+        print("sendDetect")
+        dataToSend = struct.pack(f"<IBB{len(joinedEvent)}s", len(joinedEvent) + 2, header, robotID, joinedEvent)
+        print(dataToSend)
+        self.sendToMainServer(dataToSend)
+            
     def displayFrame(self):
         frame = self.displayQueue.get()
         frame = self.predictEvent(frame)
-        cv2.imshow("Stream", frame)
-        cv2.waitKey(1)
+        #cv2.imshow("Stream", frame)
+        #cv2.waitKey(1)
         self.displayQueue.task_done()
    
 class ESPSocketHandler(SocketHandler):
@@ -83,40 +134,32 @@ class ESPSocketHandler(SocketHandler):
         self.socketName = "ESPSocket"
 
         self.frameQueue = Queue()
-        
         threading.Thread(target=self.processFrames, daemon=True).start()
         
-    def listen(self):
-        super().listen()
-        print("Start listening!")
+    def processData(self):
         chunkBuffer = {}
         prevFrame = -1
         while True:
-            try:
-                data, addr = self.server.recvfrom(65535)
-                packetSize = int.from_bytes(data[:4], "little")
-                header = data[4]
-                robotId = data[5]
-                chunks = data[6]
-                frameNum = int.from_bytes(data[7:9], "little")
-                chunkIdx = data[9]
-                chunkData = data[10:]
-                #print(packetSize)
-                if prevFrame != frameNum:
-                    chunkBuffer = {}
-                chunkBuffer[chunkIdx] = chunkData
-                
-                if len(chunkBuffer.keys()) == chunks:
-                    frame_data = b''.join(chunkBuffer[i] for i in sorted(chunkBuffer.keys()))
-                    frame_array = np.frombuffer(frame_data, dtype=np.uint8)
-                    frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
-                    self.frameQueue.put(frame_data)
+            data = self.packetQueue.get()
+            packetSize = int.from_bytes(data[:4], "little")
+            header = data[4]
+            robotId = data[5]
+            chunks = data[6]
+            frameNum = int.from_bytes(data[7:9], "little")
+            chunkIdx = data[9]
+            chunkData = data[10:]
+            #print(packetSize)
+            if prevFrame != frameNum:
+                chunkBuffer = {}
+            chunkBuffer[chunkIdx] = chunkData
+            
+            if len(chunkBuffer.keys()) == chunks:
+                frame_data = b''.join(chunkBuffer[i] for i in sorted(chunkBuffer.keys()))
+                frame_array = np.frombuffer(frame_data, dtype=np.uint8)
+                frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+                self.frameQueue.put(frame_data)
 
-                prevFrame = frameNum
-
-            except Exception as e:
-                print(f"Error: {e}")
-                break
+            prevFrame = frameNum
             
     def processFrames(self):
         start_time = time.time()
@@ -152,10 +195,3 @@ class MainServerSocketHandler(SocketHandler):
     def __init__(self, mode="client", host="0.0.0.0", port=0, type="udp", manager=None):
         super().__init__(mode, host, port, type, manager)
         self.socketName = "Main Server Socket"
-        
-    def listen(self):
-        super().listen()
-    def testSend(self):
-        while True:
-            self.client.sendto(b"hi", (self.host, self.port))
-            print("SEND")

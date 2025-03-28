@@ -15,52 +15,47 @@ class GUISocketHandler(SocketHandler):
         self.socketName = "GUI Socket"
         self.initDbController()
         
-    def listen(self):
-        super().listen()
-        while True:
-            try:
-                data = self.client.recv(4)
-                if not data:
-                    print(f"{self.socketName} is disconnected")
-                    print("Reconnecting..")
-                    self.reconnect()
-                dataLength = struct.unpack("<I", data)[0]
-                header = self.client.recv(1)
-                self.processData(header, dataLength)
-            except Exception as e:
-                print(f"Error: {e}")
-                self.client.close()
-                break
+        self.packetQueue = Queue()
+        threading.Thread(target=self.processData, daemon=True)
             
-    def processData(self, header, dataLength):
-        cmd = struct.unpack("<b", header)[0] >> 4
-        if cmd == 0x00:
-            print("getStream")
-            robotId = self.client.recv(1)
-            self.manager.sendToESP(struct.pack("<IBB", 2, header, robotId))
-        elif cmd == 0x02:
-            print("setDriveMode")
-            robotId = self.client.recv(1)
-            self.manager.sendToESP(struct.pack("<BB", 2, header, robotId))
-        elif cmd == 0x04:
-            print("requestGrant")
-            self.dbCon.myCursor.execute(f"Create user 'readonly_user'@'{self.addr[0]}' identified by '0000'")
-            self.dbCon.mydb.commit()
-            self.dbCon.myCursor.execute(f"GRANT SELECT ON tfdb.* TO 'readonly_user'@'{self.addr[0]}';")
-            self.dbCon.mydb.commit()
-            self.dbCon.myCursor.execute("FLUSH PRIVILEGES;")
-            self.dbCon.mydb.commit()
-        
-        """
-        while b'\n' in data:
-            cmd, data = data.split(b'\n', 1)
-            print("Recv: ", cmd)
-            if cmd[:2] == b"SM":
-                #self.manager.sendToESP(b"SM\n")
-                img = cv2.imread("home/tm/Downloads/20250317180459.jpg")
-                ret, imgData = cv2.imencode(".jpg", img)
-                self.send(struct.pack(f"<3sI{len(imgData)}s", b"SM\n", len(imgData), imgData))
-        """
+    def processData(self):
+        while True:
+            data = self.packetQueue.get()
+            packetSize = int.from_bytes(data[:4], "little")
+            header = data[4]
+            cmd = header >> 4
+            if cmd == 0x00:
+                print("getStream")
+                robotID = data[5]
+                self.manager.sendToESP(data)
+                if header == 0x00:
+                    targetStatus = 0b00000100
+                elif header == 0x01:
+                    targetStatus = 0b00000000
+                    
+                self.manager.getStatus(robotID)
+                self.resend(self.manager.sendToESP, data, targetStatus, 5)
+                
+            elif cmd == 0x02:
+                print("setDriveMode")
+                self.robotID = data[5]
+                self.manager.sendToESP(data)
+                if header == 0x20:
+                    targetStatus = 0b00000000
+                elif header == 0x21:
+                    targetStatus = 0b00000010
+                    
+                self.manager.getStatus(robotID)
+                self.resend(self.manager.sendToESP, data, targetStatus, 5)
+                
+            elif cmd == 0x04:
+                print("requestGrant")
+                self.dbCon.myCursor.execute(f"Create user 'readonly_user'@'{self.addr[0]}' identified by '0000'")
+                self.dbCon.mydb.commit()
+                self.dbCon.myCursor.execute(f"GRANT SELECT ON tfdb.* TO 'readonly_user'@'{self.addr[0]}';")
+                self.dbCon.mydb.commit()
+                self.dbCon.myCursor.execute("FLUSH PRIVILEGES;")
+                self.dbCon.mydb.commit()
         
     def initDbController(self):
         self.dbCon = DbController("localhost", "root", "5315", "mysql")
@@ -75,31 +70,39 @@ class GUISocketHandler(SocketHandler):
         self.dbCon.myCursor.execute("FLUSH PRIVILEGES;")
             
 class ESPSocketHandler(SocketHandler):
-    def __init__(self, mode="client", host="0.0.0.0", port=0, type="udp", manager=None):
+    def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
         super().__init__(mode, host, port, type, manager)
         self.socketName = "ESP Socket"
-
+        
+    def processData(self):
+        while True:
+            data = self.packetQueue.get()
+            if len(data) < 4:
+                continue
+            packetSize = int.from_bytes(data[:4], "little")
+            header = data[4]
+            cmd = header >> 4
+            
+            if header == 0x51:
+                robotID = data[5]
+                _type = data[6]
+                status = data[7]
+                
+                if _type == 0x00:
+                    self.manager.robotStatus = status
+                elif _type == 0x01:
+                    self.manager.streamingStatus = status
+               
 class AIServerSocket(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="udp", manager=None):
         super().__init__(mode, host, port, type, manager)
         self.socketName = "AI Server Socket"
         self.frameQueue = Queue()
         self.displayQueue = Queue()
-        self.packetQueue = Queue()
         threading.Thread(target=self.processFrames, daemon=True).start()
-        threading.Thread(target=self.displayFrame, daemon=True).start()
-        threading.Thread(target=self.processData, daemon=True).start()
-        
-    def listen(self):
-        super().listen()
-        
-        while True:
-            data, addr = self.server.recvfrom(65535)
-            
-            self.packetQueue.put(data)
+        #threading.Thread(target=self.displayFrame, daemon=True).start()
             
     def processData(self):
-        chunk = 10240
         prevFrame = -1
         while True:
             data = self.packetQueue.get()
@@ -121,14 +124,31 @@ class AIServerSocket(SocketHandler):
                 
                 if len(chunkBuffer.keys()) == chunks:
                     frame_data = b''.join(chunkBuffer[i] for i in sorted(chunkBuffer.keys()))
-                    
                     self.frameQueue.put(frame_data)
 
                 prevFrame = frameNum
             elif cmd == 3: # detect
-                eventData = "안전모 미착용"
-                totalSize = len(eventData) + 1
-                # self.manager.sendToGUI(struct.pack(f"<IB{len(eventData)}s", totalSize, header, eventData))
+                event = data[6:].decode("utf-8").split('+')[1]
+                if header == 0x30:
+                    print("POP")
+                    self.manager.detectedEvent.remove(event)
+                elif header == 0x31:
+                    print("ADD")
+                    self.manager.detectedEvent.add(event)
+                    
+                self.manager.sendToGUI(data)
+                if len(self.manager.detectedEvent) == 0:
+                    targetStatus = 0b00000010
+                elif "쓰러짐" in self.manager.detectedEvent or "사고" in self.manager.detectedEvent:
+                    targetStatus = 0b00010000
+                else:
+                    targetStatus = 0b00001000
+                data = struct.pack("<IBB", 2, 0x32, targetStatus)
+                
+                self.manager.sendToESP(data)
+                self.manager.getStatus(robotId)
+                self.manager.resend(self.manager.sendToESP, data, targetStatus)
+                
                 
     def processFrames(self):
         start_time = time.time()
@@ -139,17 +159,19 @@ class AIServerSocket(SocketHandler):
             imgSize = len(frame_data)
             totalSize = imgSize + 10
             chunks = 0; frameNum = 0; i =0
+            
             self.manager.sendToGUI(struct.pack(f"<IBBBHB{imgSize}s", totalSize, 0x10, 0x01, chunks, 
                                               frameNum, i, frame_data))
             
             frame_array = np.frombuffer(frame_data, dtype=np.uint8)
             frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+    
             frame_count += 1
             if time.time() - start_time >= 1:
                 print(f"FPS without imshow: {frame_count}")
                 frame_count = 0
                 start_time = time.time()
-            self.displayQueue.put(frame)
+            #self.displayQueue.put(frame)
             self.frameQueue.task_done()
             frameNum += 1
                 
@@ -166,6 +188,8 @@ class SocketManager:
         self.guiHandler = None
         self.espHandler = None
         self.aiHanlder = None
+        self.detectedEvent = set()
+        self.robotStatus = 0b00000000
         
     def setHandlers(self, guiHandler, espHandler, aiHandler):
         self.guiHandler = guiHandler
@@ -182,5 +206,22 @@ class SocketManager:
             
     def sendToAIServer(self, data, server=None):
         if self.aiHanlder:
-            self.guiHandler.send(data)
+            self.guiHandler.send(data)  
+            
+    def getStatus(self, robotID):
+        header = 0x50
+        self.sendToESP(struct.pack("<IBB", 2, header, robotID))
         
+    def resend(self, command, data, targetStatus, maxAttempts= 5):
+        attempts = [0]
+        def checkAndResend():
+            
+            comparedStatus = self.robotStatus & targetStatus
+            if attempts[0] >= maxAttempts or comparedStatus == targetStatus:
+                return
+            else:
+                attempts[0] += 1
+                command(data)
+                threading.Timer(1, checkAndResend).start()
+                
+        checkAndResend()
