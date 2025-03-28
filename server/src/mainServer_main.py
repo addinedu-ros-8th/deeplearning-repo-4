@@ -3,15 +3,14 @@ import threading
 import socket
 
 host = "192.168.0.180"
-espHost = "192.168.0.37"
 guiPort = 8080
-espPort = 1111
+espPort = 8081
 aiPort = 8082
     
 def main():
     manager = SocketManager()
     guiSocket = GUISocketHandler("server", host, guiPort, "tcp", manager)
-    espSocket = ESPSocketHandler("client", espHost, espPort, "udp", manager)
+    espSocket = ESPSocketHandler("server", host, espPort, "tcp", manager)
     aiSocket = AIServerSocket("server", host, aiPort, "udp", manager)
     manager.setHandlers(guiSocket, espSocket, aiSocket)
     guiSocket.start()
