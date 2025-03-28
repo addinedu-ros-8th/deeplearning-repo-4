@@ -54,6 +54,7 @@
 ![TF_ERD drawio](https://github.com/user-attachments/assets/647de690-6a3f-4b6f-a3ca-f3c978d5c174)
 
 ## 2-4. 시퀀스 다이어그램
+![sequence_github drawio (2)](https://github.com/user-attachments/assets/bf8dad73-b6c8-4fc7-bbdc-6eb836148b76)
 
 ## 2-5. 사용자 시나리오
 
