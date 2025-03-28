@@ -1,69 +1,105 @@
-from PyQt5.QtChart import QChart, QChartView, QBarSet, QBarSeries, QBarCategoryAxis, QValueAxis
-from PyQt5.QtWidgets import QApplication
 import sys
-import mysql.connector
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtNetwork import QTcpSocket
+from PyQt5.QtCore import QDataStream, QIODevice
+import cv2
+import numpy as np
 
-class Main:
+HOST = '192.168.0.180'  # ESP server IP
+PORT = 8080            # ESP server port
+
+class TcpClient(QMainWindow):
     def __init__(self):
-        self.local = mysql.connector.connect(
-            host="192.168.0.180",
-            user="root",
-            password="5315",
-            database="tfdb"
-        )
+        super().__init__()
+        self.initUI()
+        self.initSocket()
 
-        set0 = QBarSet("기본작업")  # WID 1
-        set1 = QBarSet("용접작업")  # WID 2
-        set2 = QBarSet("절삭작업")  # WID 3
-        set3 = QBarSet("사다리작업")  # WID 4
+    def initUI(self):
+        # UI 설정 (only cameraLabel)
+        self.setWindowTitle("ESP Camera Stream")
+        self.resize(640, 480)
 
-        # Count the data by work part
-        cur = self.local.cursor()
-        query = "SELECT s.WID, COUNT(*) AS wid_count FROM Report r JOIN SafeCase s ON r.SID = s.SID WHERE s.WID IN (1, 2, 3, 4) GROUP BY s.WID ORDER BY s.WID;"
-        cur.execute(query)
-        results = cur.fetchall()
+        # Set up cameraLabel
+        self.cameraLabel = QLabel(self)
+        self.cameraLabel.setGeometry(0, 0, 640, 480)  # Adjust size as needed
+        self.cameraLabel.setScaledContents(True)      # Scale pixmap to label size
 
-        # Initialize counts to 0 in case some WIDs have no data
-        counts = {1: 0, 2: 0, 3: 0, 4: 0}
-        for result in results:
-            wid = result[0]  # WID value (1, 2, 3, or 4)
-            count = result[1]  # Count for that WID
-            counts[wid] = count
+    def initSocket(self):
+        # 소켓 초기화
+        self.socket = QTcpSocket(self)
+        self.socket.connected.connect(self.onConnected)
+        self.socket.readyRead.connect(self.readMessage)
+        self.socket.errorOccurred.connect(self.onError)
 
-        # Add data to the bar sets
-        set0.append(counts[1])
-        set1.append(counts[2])
-        set2.append(counts[3])
-        set3.append(counts[4])
+        # Automatically connect to server on startup
+        self.connectToServer()
 
-        # Create series
-        series = QBarSeries()
-        series.append(set0)
-        series.append(set1)
-        series.append(set2)
-        series.append(set3)
+    def connectToServer(self):
+        # 서버에 연결 (ESP server)
+        self.socket.connectToHost(HOST, PORT)
+        print(f"Connecting to {HOST}:{PORT}...")  # Debug output to console
 
-        # Create chart
-        self.chart = QChart()
-        self.chart.addSeries(series)
-        # self.chart.setTitle("Debug: Work Violation Stats")
+    def onConnected(self):
+        print("Connected to ESP server!")
+        # Send initial command (if required by your ESP server)
 
-        # Add axes
-        categories = ["Q1"]
-        axisX = QBarCategoryAxis()
-        axisX.append(categories)
-        self.chart.setAxisX(axisX, series)
+    def readMessage(self):
+        # 서버로부터 이미지 데이터 수신
+        while self.socket.bytesAvailable() > 0:
+            # Assuming each frame is prefixed with a 4-byte length
+            if self.socket.bytesAvailable() >= 4:
+                data = self.socket.readAll()
+                totalSize = int.from_bytes(data[:4], "little")
+                
+                header = int.from_bytes(data[4], "little")
+                cmd = header >> 4
+                if cmd == 1:
+                    robotId = data[5]
+                    imgData = data[10:]
+                    img = np.frombuffer(imgData, np.uint8)
+                    img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+                    self.displayImage(imgData)
+                    
+                        #return
+                # elif cmd == 3:
+                #     robotId = data[5]
+                #     event = data[4:]
+                #     if self.event_callback:
+                #         self.event_callback(event)
+            else:
+                # Not enough data for size; wait for more
+                return
 
-        axisY = QValueAxis()
-        axisY.setRange(0, 10)  # Adjust this range based on your data
-        self.chart.setAxisY(axisY, series)
+    def displayImage(self, frame_data):
+        # JPEG 데이터를 QPixmap으로 변환하여 cameraLabel에 표시
+        try:
+            # Decode JPEG data
+            img = cv2.imdecode(np.frombuffer(frame_data, np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                # Convert BGR to RGB for Qt
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                h, w, c = img.shape
+                qimage = QImage(img.data, w, h, w * c, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(qimage)
+                self.cameraLabel.setPixmap(pixmap)
+            else:
+                print("Failed to decode image")
+        except Exception as e:
+            print(f"Image display error: {e}")
 
-        # Create view for debugging
-        self.chart_view = QChartView(self.chart)
-        self.chart_view.setMinimumSize(800, 600)
-        self.chart_view.show()
+    def onError(self):
+        # 에러 처리
+        error = self.socket.errorString()
+        print(f"Error occurred: {error}")
+
+    def closeEvent(self, event):
+        # Cleanup on window close
+        self.socket.disconnectFromHost()
+        event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    main_instance = Main()
+    client = TcpClient()
+    client.show()
     sys.exit(app.exec_())

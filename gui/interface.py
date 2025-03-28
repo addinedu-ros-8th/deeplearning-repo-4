@@ -14,6 +14,9 @@ import numpy as np
 import mysql.connector
 from datetime import datetime, timedelta
 from PyQt5.QtChart import *
+from PyQt5.QtNetwork import QTcpSocket
+from PyQt5.QtCore import QDataStream, QIODevice
+import pyqtgraph as pg
 
 
 HOST = '192.168.0.180'
@@ -21,62 +24,173 @@ PORT = 8080
 
 interface = uic.loadUiType("./interface.ui")[0]
 
-class Client():
-    def __init__(self, HOST="0.0.0.0", PORT=8080, callback=None):
-        self.HOST = HOST
-        self.PORT = PORT
-        self.callback = callback
 
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+class Receiver (QThread):
+    detected = pyqtSignal(bytes)
+
+    def __init__(self, conn, parent=None):
+        super(Receiver, self).__init__(parent)
+        self.isRunning = False
     
-    def startClient(self):
-        self.clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.clientSocket.connect((self.HOST, self.PORT))
-        cameraThread = Camera(self.clientSocket)
-        cameraThread.start()
-        dataToSend = struct.pack("<Ib", 1, 0x40)
-        self.clientSocket.send(dataToSend)
-        
-        buffer = b""
-        chunk = 25000
-        while True : # main or manual is open 
-            self.stream = None
-            data = self.clientSocket.recv(chunk)
-            if data is None:
-                break
-            imgSize = int.from_bytes(data[:4], "big")
-            header = data[4]
-            cmd = header >> 4
-            if cmd == 1:
-                robotId = data[5]
-                imgData = data[10:]
-                
-                img = np.fromstring(imgData, np.int8)
-                img = cv2.imdecode(img, cv2.IMREAD_COLOR)
-                if self.callback:
-                    self.callback(img)
-            
-        self.clientSocket.close()
-        
-''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-class Camera(Thread):
-    def __init__(self, clientSocket, parent = None):
-        super().__init__()
-        self.main = parent
-        self.clientSocket = clientSocket
-        self.running = False
-
     def run(self):
-        while self.running:
-            self.clientSocket.send(b"SM\n")
+        print("recv start")
+        self.isRunning = True
 
-    def stop(self):
-        self.running = False
+        while (self.isRunning == True):
+            if self.conn.readable():
+                res = self.conn.read_until(b'\n')
+
 
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+class ChartCreator:
+    def __init__(self):
+        self.work_types = {
+            1: "기본작업",
+            2: "용접작업",
+            3: "절삭작업",
+            4: "사다리작업",
+            5: "사고"
+        }
+        self.equip_types = {
+            1: "안전모",
+            2: "용접가면",
+            3: "소화기",
+            4: "불티산방지막",
+            5: "적재물",
+            6: "최상단 밑단"
+        }
+        
+
+    def byWork (self, page, data_dict, query_field, chart_widget):
+        """Generic method to create bar charts"""
+        # Create bar sets dynamically
+        bar_sets = [QBarSet(name) for name in data_dict.values()]
+        
+        # Fetch data
+        cur = self.local.cursor()
+        ids = list(data_dict.keys())
+        query = f"""
+            SELECT r.{query_field}, COUNT(*) AS count 
+            FROM Report r 
+            WHERE r.{query_field} IN ({','.join(map(str, ids))}) 
+            GROUP BY r.{query_field} 
+            ORDER BY r.{query_field};
+        """
+        cur.execute(query)
+        results = cur.fetchall()
+
+        # Initialize counts
+        counts = {id: 0 for id in ids}
+        for result in results:
+            id, count = result
+            counts[id] = count
+
+        # Fill bar sets with data
+        for bar_set, id in zip(bar_sets, ids):
+            bar_set.append(counts[id])
+
+        # Create and configure chart
+        series = QBarSeries()
+        for bar_set in bar_sets:
+            series.append(bar_set)
+
+        chart = QChart()
+        chart.addSeries(series)
+        chart.legend().setAlignment(Qt.AlignBottom)
+
+        # Configure axes
+
+        axisX = QBarCategoryAxis()
+        axisX.append([""])
+        chart.setAxisX(axisX, series)
+       
+
+        axisY = QValueAxis()
+        chart.setAxisY(axisY, series)
+
+        # Set up chart view and layout
+        chart_view = QChartView(chart)
+        layout = QVBoxLayout(page)
+        layout.addWidget(chart_view)
+        chart_widget.setLayout(layout)
+
+        return chart
+
+    def byEquip(self, page, data_dict, query_field, chart_widget):
+        bar_sets = [QBarSet(name) for name in data_dict.values()]
+        
+        # Fetch data
+        cur = self.local.cursor()
+        ids = list(data_dict.keys())
+        query = f"""
+            SELECT s.{query_field}, COUNT(*) AS count 
+            FROM Report r
+            JOIN SafeCase s ON r.SID = s.SID 
+            WHERE s.{query_field} IN ({','.join(map(str, ids))}) 
+            GROUP BY s.{query_field} 
+            ORDER BY s.{query_field};
+        """
+
+        cur.execute(query)
+        results = cur.fetchall()
+        
+        counts = {id: 0 for id in ids}
+        for result in results:
+            id, count = result
+            counts[id] = count
+
+        # Fill bar sets with data
+        for bar_set, id in zip(bar_sets, ids):
+            bar_set.append(counts[id])
+
+        # Create and configure chart
+        series = QBarSeries()
+        for bar_set in bar_sets:
+            series.append(bar_set)
+
+        chart = QChart()
+        chart.addSeries(series)
+        chart.legend().setAlignment(Qt.AlignBottom)
+
+
+        axisX = QBarCategoryAxis()
+        axisX.append([""])
+        chart.setAxisX(axisX, series)
+
+        axisY = QValueAxis()
+        chart.setAxisY(axisY, series)
+        
+        chart_view = QChartView(chart)
+        layout = QVBoxLayout(page)
+        layout.addWidget(chart_view)
+        chart_widget.setLayout(layout)
+        
+        return chart
+
+
+    def statWorkPart(self):
+        """Create work part statistics chart"""
+        page = self.stackedWidget.widget(1)
+        return self.byWork(page, self.work_types, "TID", self.workChart)
+
+    def statEquip(self):
+        """Create equipment statistics chart"""
+        page = self.stackedWidget.widget(2)
+        return self.byEquip(page, self.equip_types, "EID", self.equipChart)
+
+
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 class  Interface(QMainWindow, interface):
+    image_signal = pyqtSignal(np.ndarray)  # Signal for image updates
+    event_signal = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -88,59 +202,118 @@ class  Interface(QMainWindow, interface):
             database='tfdb'
         )
 
+        #self.initUI()
+        self.initSocket()
+
         #bonobono
         self.pixmap = QPixmap()
         self.pixmap.load("./bono.png")
-        self.pixmap = self.pixmap.scaled(QSize(200,200), Qt.KeepAspectRatioByExpanding)
-        self.safetyRight.setPixmap(self.pixmap)
-        self.safetyRight.setAlignment(Qt.AlignCenter | Qt.AlignRight)
+        self.pixmap = self.pixmap.scaled(QSize(300,200), Qt.KeepAspectRatioByExpanding)
+        self.bono.setPixmap(self.pixmap)
+        self.bono.setAlignment(Qt.AlignCenter | Qt.AlignRight)
         
 
-        #send command
-        self.client = Client(HOST, PORT, callback = self.updateCamera)
-        threading.Thread(target=self.client.startClient, daemon=True).start()
-
-        #camera
-        self.isCameraOn = False
-        self.cameraBox = Camera(self)
-        self.cameraBox.start()
-        #self.btn_camera.clicked.connect(self.controlCamera)
-
-        # connect each button to stackedWidget page
+        #connect each button to stackedWidget page
         self.btn1.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(0))
         self.btn2.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(1))
         self.btn3.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(2))
         self.btn4.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(3))
         self.btn5.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(4))
         self.btn6.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(5))
-
-        #page-chart
-        #self.stackedWidget.addWidget(self.page2) 
-        self.statWorkPart()
-
-        #self.stackedWidget.setCurrentIndex(1)
-
-        #show log
-        self.showData() 
-        self.updateRed()
-        #self.updateGreen()
-        #self.updateGray
-
+    
         #panel box
         self.box_gray.setStyleSheet("QLabel { border: 2px solid gray; background-color: #dedfdf;}")
         self.box_red.setStyleSheet("QLabel { border: 2px solid red; background-color: #ff9999;}")
         self.box_green.setStyleSheet("QLabel { border: 2px solid green; background-color: #85e085;}")
 
+
+        #chart and graph
+        self.chart_creator = ChartCreator()
+        self.chart_creator.local = self.local  # Database connection
+        self.chart_creator.stackedWidget = self.stackedWidget
+        self.chart_creator.workChart = self.workChart
+        self.chart_creator.equipChart = self.equipChart
+        self.setup_charts()
+
+        #page 4,5,6
+        self.statDaily()
+        self.safetyRule()
+        self.showData() 
+
+
+
+
+    def initSocket(self):
+        # 소켓 초기화
+        self.socket = QTcpSocket(self)
+        self.socket.connected.connect(self.onConnected)
+        self.socket.readyRead.connect(self.readMessage)
+        self.socket.errorOccurred.connect(self.onError)
+
+    def connectToServer(self):
+        # 서버에 연결 (ESP server)
+        self.socket.connectToHost(HOST, PORT)
+        print(f"Connecting to {HOST}:{PORT}...")  # Debug output to console
+
+    def onConnected(self):
+        print("Connected to ESP server!")
+
+    def readMessage(self):
+        # 서버로부터 이미지 데이터 수신
+        while self.socket.bytesAvailable() > 0:
+            if self.socket.bytesAvailable() >= 4:
+                data = self.socket.readAll()
+                totalSize = int.from_bytes(data[:4], "little")
+                header = int.from_bytes(data[4], "little")
+                cmd = header >> 4
+                if cmd == 1:
+                    robotId = data[5]
+                    imgData = data[10:]
+                    img = np.frombuffer(imgData, np.uint8)
+                    img = cv2.imdecode(img, cv2.IMREAD_COLOR)
+                    self.updateCamera(img)
+                    
+                elif cmd == 3:
+                    robotId = data[5]
+                    event = data[4:4+totalSize]
+                    self.updatePanel(event)
+            else:
+                # Not enough data for size; wait for more
+                return
+
+    def onError(self):
+        # 에러 처리
+        error = self.socket.errorString()
+        print(f"Error occurred: {error}")
+
+    def closeEvent(self, event):
+        # Cleanup on window close
+        self.socket.disconnectFromHost()
+        event.accept()
     
-    ''' send command to server '''
-    def sendCommand(self):
-        client = Client(HOST, PORT)
-        client.startClient()
+
+
+    def setup_charts(self):
+        self.chart_creator.statWorkPart()
+        self.chart_creator.statEquip()
+        # Automatically connect to server on startup
+        self.connectToServer()
 
     
+
+    
+    def emitImage(self, image):
+        self.image_signal.emit(image)  # Emit image to main thread
+
+    def emitEvent(self, event):
+        self.event_signal.emit(event)
+
     ''' update camera to stream '''
     def updateCamera(self, image):
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        try:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        except Exception:
+            return
         h, w, c = image.shape
         qimage = QImage(image.data, w, h, w*c, QImage.Format_RGB888)
 
@@ -149,62 +322,78 @@ class  Interface(QMainWindow, interface):
 
         self.cameraLabel.setPixmap(self.pixmap)
 
-    ''' create chart (작업별 위반통계) '''
-    def statWorkPart (self):    
-        self.page2 = self.stackedWidget.widget(1)  # Ensure it matches page index
-        set0 = QBarSet("기본작업")
-        set1 = QBarSet("용접작업")
-        set2 = QBarSet("절삭작업")
-        set3 = QBarSet("사다리작업")
 
-        # count the data by work part
+
+
+    def statDaily(self):
         cur = self.local.cursor()
-        query = "SELECT s.WID, COUNT(*) AS wid_count FROM Report r JOIN SafeCase s ON r.SID = s.SID WHERE s.WID IN (1, 2, 3, 4) GROUP BY s.WID ORDER BY s.WID;"
+        query = """
+                SELECT DATE(r.Date) AS violation_date, COUNT(*) AS violation_count
+                FROM Report r
+                GROUP BY DATE(r.Date)
+                ORDER BY violation_date ASC
+        """
         cur.execute(query)
         results = cur.fetchall()
 
-        # Initialize counts to 0 in case some WIDs have no data
-        counts = {1: 0, 2: 0, 3: 0, 4: 0}
+        series = QLineSeries()
+        series.setName("Daily Reports")
+
+        
         for result in results:
-            wid = result[0]  # WID value (1, 2, 3, or 4)
-            count = result[1]  # Count for that WID
-            counts[wid] = count
+            violation_date, violation_count = result
+            # Convert the date to a QDateTime object
+            date = QDateTime.fromString(str(violation_date), "yyyy-MM-dd")
+            # QLineSeries expects x-axis as milliseconds since epoch
+            x = date.toMSecsSinceEpoch()
+            y = violation_count
+            series.append(x, y)
 
-        # Add data to the bar sets
-        set0.append(counts[1])
-        set1.append(counts[2])
-        set2.append(counts[3])
-        set3.append(counts[4])
+        # Create the chart and add the series
+        chart = QChart()
+        chart.addSeries(series)
+        chart.legend().hide()
 
-        # Create series
-        series = QBarSeries()
-        series.append(set0)
-        series.append(set1)
-        series.append(set2)
-        series.append(set3)
-
-        # Create chart
-        self.chart = QChart()
-        self.chart.addSeries(series)
-        #self.chart.setTitle("Debug: Work Violation Stats")
-
-        # Add axes
-        categories = ["Q1"]
-        axisX = QBarCategoryAxis()
-        axisX.append(categories)
-        self.chart.setAxisX(axisX, series)
+        # Configure the x-axis (dates)
+        axisX = QDateTimeAxis()
+        axisX.setTickCount(8)  # Adjust based on your data range
+        axisX.setFormat("MM-dd")  # Date format for labels
+        axisX.setTitleText("Date")
+        chart.addAxis(axisX, Qt.AlignBottom)
+        series.attachAxis(axisX)
+        
 
         axisY = QValueAxis()
-        #axisY.setRange(0, 10)
-        self.chart.setAxisY(axisY, series)
+        axisY.setLabelFormat("%i")  # Integer format for counts  
+        axisY.setRange(0, max(y for _, y in results)) 
+        chart.addAxis(axisY, Qt.AlignLeft)
+        series.attachAxis(axisY)
 
-        self.chart_view = QChartView(self.chart)
-        
-        # ✅ Place Chart in Page 2
-        layout = QVBoxLayout(self.page2)  # Use Page 2
-        layout.addWidget(self.chart_view)
-        self.workChart.setLayout(layout)
-       
+        series.setPen(QPen(QColor("#09DB7F"), 2))  # Blue line, 2px thick
+        series.setPointsVisible(True)
+
+        # Create the chart view and add it to page4
+        chart_view = QChartView(chart)
+        chart_view.setRenderHint(QPainter.Antialiasing)  # Smooth rendering
+
+        # Add the chart to page4's layout
+        layout = QVBoxLayout(self.stackedWidget.widget(3))
+        layout.addWidget(chart_view)
+        self.dailyChart.setLayout(layout)
+
+
+
+    def safetyRule(self):
+        self.rule1.setStyleSheet("QLabel { border: 2px solid #F88378; background-color: #F88378; color:black;}")
+        self.rule2.setStyleSheet("QLabel { border: 2px solid #FBCEB1; background-color: #FBCEB1; color:black;}")
+        self.rule3.setStyleSheet("QLabel { border: 2px solid #AFD9AE; background-color: #AFD9AE; color:black;}")
+        self.rule4.setStyleSheet("QLabel { border: 2px solid #43B3AE; background-color: #43B3AE; color:black;}")
+        self.rule1.setText("기본작업: 안전모")
+        self.rule2.setText("용접작업: 용접가면, 소화기")
+        self.rule3.setText("절삭작업: 안전모, 소화기, 불티산방지막")
+        self.rule4.setText("사다리작업: 최상단 밑 작업, 사다리 적재물 위 미설치")
+
+
     
     ''' conver ID (int) to Name (string) '''
     def convertIDtoName(self, table, id):
@@ -226,15 +415,14 @@ class  Interface(QMainWindow, interface):
             print(f"Error in convertIDtoName: {e}")
             return None
         finally:
-            cur.close()  # Always close the cursor
-
+            cur.close()  
     
     ''' update report log from database '''
     def showData(self):
         self.table.setRowCount(0)
 
         cursor = self.local.cursor()
-        cursor.execute("SELECT * FROM Report")
+        cursor.execute("SELECT * FROM Report ORDER BY date DESC")
         results = cursor.fetchall()
 
         for row in results:
@@ -242,10 +430,10 @@ class  Interface(QMainWindow, interface):
             self.table.insertRow(rowIndex)
 
             # Convert IDs to names
-            type_name = self.convertIDtoName("EventType", str(row[2]))  # TID -> Name
-            equip_name = self.convertIDtoName("SafeCase", str(row[3]))  # SID -> Equip Name
+            type_name = self.convertIDtoName("EventType", str(row[2])) 
+            equip_name = self.convertIDtoName("SafeCase", str(row[3]))  
             equip_name = self.convertIDtoName("Equipment", equip_name)
-            accident_name = self.convertIDtoName("Accident", str(row[4]))  # AID -> Name
+            accident_name = self.convertIDtoName("Accident", str(row[4]))  
 
             # Insert data into columns
             self.table.setItem(rowIndex, 0, QTableWidgetItem(type_name))  # Type
@@ -256,72 +444,34 @@ class  Interface(QMainWindow, interface):
 
     
 
-    ''' update red warning pannel from database '''
-    def updateRed(self):
+
+    ''' update grey, geen, red warning pannel '''
+    def updatePanel(self, event):
+        DT = int.from_bytes(event[0], "little") & 0x0F
+        print(event[2:])
+        parts = bytes(event[2:].data()).decode().split('+')
+        parts = [part.strip() for part in parts]  # strip space
+
+        typeName, red = parts
         
 
-        try:
-            cur = self.local.cursor()
-
-            #time_threshold = datetime.now() - timedelta(seconds=20)
-            #cur.execute("SELECT * FROM Report WHERE date >= %s", (time_threshold,))
-            cur.execute("SELECT SID FROM Report")
-            results = cur.fetchall()
-            equip_names = []
-
-            for result in results:
-                sid = str(result[0])  # Get the SID from each tuple
-                
-                # Get EID for this SID
-                cur.execute("SELECT EID FROM SafeCase WHERE SID = %s", (sid,))
-                equipID_result = cur.fetchall()
-                
-                if equipID_result:  # Check if we got any results
-                    equipID = str(equipID_result[0][0])
-                    
-                    # Get equipment name for this EID
-                    cur.execute("SELECT equipName FROM Equipment WHERE EID = %s", (equipID,))
-                    equipName = cur.fetchall()
-                    
-                    if equipName:  # Check if we got an equipment name
-                        equip_names.append(str(equipName[0][0]))
-
-            
-            # Display all equipment names or "No data found" if the list is empty
-            display_text = "\n".join(equip_names) if equip_names else "No Recent Data"
-            self.box_red.setText(display_text)
-
-        except mysql.connector.Error as e:
-            # Handle database errors
-            self.box_red.setText(f"Error: {str(e)}")
-        finally:
-            # Clean up resources
-            if 'cur' in locals():
-                cur.close()
-            if 'local' in locals() and self.local.is_connected():
-                self.local.close()
-
-
-
-
-
-
-
-class Receiver (QThread):
-    detected = pyqtSignal(bytes)
-
-    def __init__(self, conn, parent=None):
-        super(Receiver, self).__init__(parent)
-        self.isRunning = False
-    
-    def run(self):
-        print("recv start")
-        self.isRunning = True
-
-        while (self.isRunning == True):
-            if self.conn.readable():
-                res = self.conn.read_until(b'\n')
-
+        if DT == 1:
+            self.box_gray.setText(typeName)
+            self.box_red.setText(red)
+            if red == "쓰러짐" or red == "화재":
+                msg = QMessageBox(self)
+                msg.setWindowTitle('Danger')
+                msg.setText(f'{red} 발생')
+                msg.setIcon(QMessageBox.Warning)
+                msg.setStandardButtons(QMessageBox.Ok)
+                msg.setModal(False)  
+                msg.show()  
+        
+        if DT == 0:
+            self.box_gray.setText("Well Done! All Clear :>")
+            self.box_green.setText("")
+            self.box_red.setText("") 
+     
 
 
 if __name__ == "__main__":
