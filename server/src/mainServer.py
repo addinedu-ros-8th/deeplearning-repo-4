@@ -85,13 +85,7 @@ class ESPSocketHandler(SocketHandler):
             
             if header == 0x51:
                 robotID = data[5]
-                _type = data[6]
-                status = data[7]
-                
-                if _type == 0x00:
-                    self.manager.robotStatus = status
-                elif _type == 0x01:
-                    self.manager.streamingStatus = status
+                self.manager.robotStatus = data[7]
                
 class AIServerSocket(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="udp", manager=None):
@@ -112,7 +106,7 @@ class AIServerSocket(SocketHandler):
             header = data[4]
             cmd = header >> 4 # check left half byte of header
             if cmd == 1: # sendSteam
-                robotId = data[5]
+                robotID = data[5]
                 chunks = data[6]
                 frameNum = int.from_bytes(data[7:9], "little")
                 chunkIdx = data[9]
@@ -128,15 +122,30 @@ class AIServerSocket(SocketHandler):
 
                 prevFrame = frameNum
             elif cmd == 3: # detect
-                event = data[6:].decode("utf-8").split('+')[1]
+                robotID = data[5]
+                event = data[6:].decode("utf-8")
                 if header == 0x30:
-                    print("POP")
-                    self.manager.detectedEvent.remove(event)
+                    print("POP", event)
+                    if '+' in event:
+                        self.manager.detectedEvent.remove(event)
+                    else:
+                        copyEvent = self.manager.detectedEvent.copy()
+                        for each in copyEvent:
+                            if event in each:
+                                self.manager.detectedEvent.remove(each)
                 elif header == 0x31:
-                    print("ADD")
+                    print("ADD", event)
                     self.manager.detectedEvent.add(event)
-                    
+                
+                if '+' in event:
+                    typeName = event.split('+')[0]
+                    eventList = [each.split('+')[1] for each in self.manager.detectedEvent if typeName in each]
+                    eventList.insert(0, typeName)
+                    joinedEvent = '+'.join(eventList).encode("utf-8")
+                    print(eventList)
+                    data = struct.pack(f"<IBB{len(joinedEvent)}s", len(joinedEvent) + 2, header, robotID, joinedEvent)
                 self.manager.sendToGUI(data)
+                
                 if len(self.manager.detectedEvent) == 0:
                     targetStatus = 0b00000010
                 elif "쓰러짐" in self.manager.detectedEvent or "사고" in self.manager.detectedEvent:
@@ -146,9 +155,8 @@ class AIServerSocket(SocketHandler):
                 data = struct.pack("<IBB", 2, 0x32, targetStatus)
                 
                 self.manager.sendToESP(data)
-                self.manager.getStatus(robotId)
+                self.manager.getStatus(robotID)
                 self.manager.resend(self.manager.sendToESP, data, targetStatus)
-                
                 
     def processFrames(self):
         start_time = time.time()
@@ -159,7 +167,7 @@ class AIServerSocket(SocketHandler):
             imgSize = len(frame_data)
             totalSize = imgSize + 10
             chunks = 0; frameNum = 0; i =0
-            
+  
             self.manager.sendToGUI(struct.pack(f"<IBBBHB{imgSize}s", totalSize, 0x10, 0x01, chunks, 
                                               frameNum, i, frame_data))
             

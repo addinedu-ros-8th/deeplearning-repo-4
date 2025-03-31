@@ -8,26 +8,18 @@ from queue import Queue
 import time
 from ultralytics import YOLO
 import mediapipe as mp
-from concurrent.futures import ThreadPoolExecutor
+from workDetector import WorkDetector
 
 class SocketManager:
     def __init__(self):
         self.mainServerHandler = None
         self.espHandler = None
-        
-        # Pose model
-        self.mpPose = mp.solutions.pose
-        self.pose = self.mpPose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        self.mpDrawing = mp.solutions.drawing_utils
-        
-        self.fireDetection = YOLO("/home/tm/dev_ws/yolo/runs/detect/fire_detection/weights/fire_detection.pt").to("cuda")
+        self.workDetector = WorkDetector()
         
         self.displayQueue = Queue()
         
         self.detectedEvent = set()
         self.detectedTime = None
-        
-        self.bboxQueue = Queue()
         
     def setHandlers(self, mainServerHandler, espHandler):
         self.mainServerHandler = mainServerHandler
@@ -43,79 +35,141 @@ class SocketManager:
             
     def predictEvent(self, img):
         imgrgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = self.pose.process(imgrgb)
-        detectedFires = self.fireDetection.predict(img, conf=0.7)
+        poseResults = self.workDetector.pose.process(imgrgb)
+        fireResults = self.workDetector.fireDetection.predict(img, conf=0.7, verbose=False)
+        workResults = self.workDetector.workModel.predict(img, conf=0.5, verbose=False)
+        helmetResults = self.workDetector.helmetModel.predict(img, verbose=False, conf=0.5)
         
         newImg = img.copy()
-        if results.pose_landmarks:
-            self.mpDrawing.draw_landmarks(newImg, results.pose_landmarks, self.mpPose.POSE_CONNECTIONS)
-            
-            landmarks = results.pose_landmarks.landmark
-            
-            # Draw box on person
-            h, w, _ = img.shape
-            xCoords = [landmark.x * w for landmark in landmarks]
-            yCoords = [landmark.y * h for landmark in landmarks]
-            xMin, xMax = int(min(xCoords)), int(max(xCoords))
-            yMin, yMax = int(min(yCoords)), int(max(yCoords))
-            
-            padding = 20
-            xMin = max(0, xMin - padding)
-            yMin = max(0, yMin - padding)
-            xMax = min(w, xMax + padding)
-            yMax = min(h, yMax + padding)
-            
-            shoulderXY = [(int(landmarks[i].x * img.shape[1]), int(landmarks[i].y * img.shape[0])) 
-                          for i in [11, 12] if landmarks[i].visibility > 0.5]  # Left/Right Shoulder
-            hipXY = [(int(landmarks[i].x * img.shape[1]), int(landmarks[i].y * img.shape[0])) 
-                     for i in [23, 24] if landmarks[i].visibility > 0.5]  # Left/Right Hip
-            
-            if len(shoulderXY) < 1 or len(hipXY) < 1:
-                print("Not enough points")
-                return newImg
-                
-            shoulderMid = np.mean(shoulderXY, axis=0).astype(int)
-            hipMid = np.mean(hipXY, axis=0).astype(int)
-            slope = abs((shoulderMid[1] - hipMid[1]) / (shoulderMid[0] - hipMid[0] + 1e-6))
-            
-            try:
-                if slope < 0.3:
-                    cv2.rectangle(newImg, (xMin, yMin), (xMax, yMax), (0, 255, 255), 2)
-                    durationTime = time.time() - self.detectedTime
-                    print(durationTime)
-                    if durationTime >= 5:
-                        self.sendDetectCommand(0x31, 1, "사고", "쓰러짐")
+        
+        # Fallen person detected        
+        if self.workDetector.isFallenPersonDetected(img, poseResults):
+            if self.detectedTime is None:
+                self.detectedTime = time.time()
+            else:
+                durationTime = time.time() - self.detectedTime
+                print(durationTime)
+                if durationTime >= 5:
+                    self.sendDetectCommand(0x31, 1, "사고", "쓰러짐")
                         
-            except Exception:
-                if self.detectedTime == None:
-                    self.detectedTime = time.time()
         else:
-            self.detectedTime = time.time()
+            self.detectedTime = None
             self.sendDetectCommand(0x30, 1, "사고", "쓰러짐")
-            
-        for result in detectedFires:
-            if len(result.boxes) == 0:
-                self.sendDetectCommand(0x30, 1, "사고", "화재")
-                break
-            xyxy = result.boxes.xyxy
-            cv2.rectangle(newImg, (int(xyxy[0][0]), int(xyxy[0][1])), (int(xyxy[0][2]), int(xyxy[0][3])), (0, 0, 255), 2)
+        
+        # Fire detected    
+        if self.workDetector.isFireDetected(fireResults):
             self.sendDetectCommand(0x31, 1, "사고", "화재")
+            for box in fireResults[0].boxes:
+                xyxy = box.xyxy
+                cv2.rectangle(newImg, (int(xyxy[0][0]), int(xyxy[0][1])), (int(xyxy[0][2]), int(xyxy[0][3])), (0, 0, 255), 2)
+        else:
+            self.sendDetectCommand(0x30, 1, "사고", "화재")
+        
+        if self.workDetector.isWorkDetected(workResults):
+            masks = self.workDetector.getMasks(workResults)
+            detectedClasses = self.workDetector.getDetectedClasses(workResults)
+            # Ladder detected
+            if self.workDetector.isLadderDetected(detectedClasses):
+                # Worker detected
+                if self.workDetector.isWorkerDetected(detectedClasses):
+                    helmetResults = self.workDetector.helmetModel.predict(img, verbose=False, conf=0.5)
+                    # Helmet deteceted
+                    if self.workDetector.isHelmetDetected(helmetResults):
+                        self.sendDetectCommand(0x30, 1, "사다리 작업 위반", "안전모")
+                    else:
+                        self.sendDetectCommand(0x31, 1, "사다리 작업 위반", "안전모")
+                    ladderIdx = detectedClasses.index("WO-03")
+                    ladderPolygon = masks[ladderIdx]
+                    workerMasks = self.workDetector.getWorkerMasks(workResults)
+                    # Ladder work violation detected
+                    if self.workDetector.isLadderWorkViolation(ladderPolygon, workerMasks):
+                        self.sendDetectCommand(0x31, 1, "사다리 작업 위반", "최상단 밑단 작업")
+                    else:
+                        self.sendDetectCommand(0x30, 1, "사다리 작업 위반", "최상단 밑단 작업")
+            else:
+                self.sendDetectCommand(0x30, 1, "사다리 작업 위반")
             
+            # Welding detected                    
+            if self.workDetector.isWeldingDetected(detectedClasses):
+                # Welding mask detected
+                if self.workDetector.isWeldingmaskDetected(detectedClasses):
+                    self.sendDetectCommand(0x30, 1, "용접 작업 위반", "용접가면")
+                else:
+                    self.sendDetectCommand(0x31, 1, "용접 작업 위반", "용접가면")
+                # Fire distinguisher detected
+                if self.workDetector.isFireExtinguisherDetected(detectedClasses):
+                    self.sendDetectCommand(0x30, 1, "용접 작업 위반", "소화기")
+                else:
+                    self.sendDetectCommand(0x31, 1, "용접 작업 위반", "소화기")
+            else:
+                self.sendDetectCommand(0x30, 1, "용접 작업 위반")
+            # Cutting detected 
+            if self.workDetector.isCuttingDetected(detectedClasses):
+                # Spark depense detected
+                if self.workDetector.isSparkDepenseDetected(detectedClasses):
+                    self.sendDetectCommand(0x30, 1, "절삭 작업 위반", "불티산방지막")
+                else:
+                    self.sendDetectCommand(0x31, 1, "절삭 작업 위반", "불티산방지막")
+                # Fire distinguisher detected
+                if self.workDetector.isFireExtinguisherDetected(detectedClasses):
+                    self.sendDetectCommand(0x30, 1, "절삭 작업 위반", "소화기")
+                else:
+                    self.sendDetectCommand(0x31, 1, "절삭 작업 위반", "소화기")
+                # Helmet detected
+                if self.workDetector.isHelmetDetected(helmetResults):
+                    self.sendDetectCommand(0x30, 1, "절삭 작업 위반", "안전모")
+                else:
+                    self.sendDetectCommand(0x31, 1, "절삭 작업 위반", "안전모")
+            else:
+                self.sendDetectCommand(0x30, 1, "절삭 작업 위반")
+            # Worker detected
+            if self.workDetector.isWorkerDetected(detectedClasses):
+                # Helmet detected
+                if self.workDetector.isHelmetDetected(helmetResults):
+                    self.sendDetectCommand(0x30, 1, "장비 위반", "안전모")
+                else:
+                    self.sendDetectCommand(0x31, 1, "장비 위반", "안전모")
+            else:
+                self.sendDetectCommand(0x30, 1, "장비 위반")
+                    
+            for idx, mask in enumerate(masks):
+                # 다각형 좌표를 numpy 배열로 변환
+                polygon = np.array(mask, np.int32)
+                
+                # 바운딩 박스 계산
+                x, y, w, h = cv2.boundingRect(polygon)
+                cv2.putText(newImg, detectedClasses[idx], (x, y), cv2.FONT_HERSHEY_COMPLEX, 2, (255, 0, 0), 2)
+                
+                # 이미지에 바운딩 박스 그리기
+                cv2.rectangle(newImg, (x, y), (x + w, y + h), (0, 255, 0), 2)  # 초록색 박스
+        
         return newImg
     
-    def sendDetectCommand(self, header, robotID, typeName, event):
-        if event in self.detectedEvent:
-            if header == 0x30:
-                self.detectedEvent.remove(event)
-            elif header == 0x31:
-                return
+    def sendDetectCommand(self, header, robotID, typeName, event=None):
+        if event is not None:
+            joinedEvent = typeName + "+" + event
+            if joinedEvent in self.detectedEvent:
+                if header == 0x30:
+                    self.detectedEvent.remove(joinedEvent)
+                else:
+                    return
+            else:
+                if header == 0x31:
+                    self.detectedEvent.add(joinedEvent)
+                else:
+                    return
         else:
-            if header == 0x30:
-                return
-            if header == 0x31:
-                self.detectedEvent.add(event)
-        joinedEvent = typeName + "+" + event
+            joinedEvent = typeName
+            copyEvent = self.detectedEvent.copy()
+            hasEvent = False
+            for each in copyEvent:
+                if joinedEvent in each:
+                    self.detectedEvent.remove(each)
+                    hasEvent = True
+                if hasEvent == False:
+                    return
         joinedEvent = joinedEvent.encode("utf-8")
+        
         print("sendDetect")
         dataToSend = struct.pack(f"<IBB{len(joinedEvent)}s", len(joinedEvent) + 2, header, robotID, joinedEvent)
         print(dataToSend)
@@ -124,8 +178,8 @@ class SocketManager:
     def displayFrame(self):
         frame = self.displayQueue.get()
         frame = self.predictEvent(frame)
-        #cv2.imshow("Stream", frame)
-        #cv2.waitKey(1)
+        cv2.imshow("Stream", frame)
+        cv2.waitKey(1)
         self.displayQueue.task_done()
    
 class ESPSocketHandler(SocketHandler):
