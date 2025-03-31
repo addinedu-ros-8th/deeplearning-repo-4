@@ -22,7 +22,7 @@ import pyqtgraph as pg
 HOST = '192.168.0.180'
 PORT = 8080
 
-interface = uic.loadUiType("./interface.ui")[0]
+interface = uic.loadUiType("interface.ui")[0]
 
 
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -219,7 +219,7 @@ class  Interface(QMainWindow, interface):
         self.btn3.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(2))
         self.btn4.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(3))
         self.btn5.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(4))
-        self.btn6.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(5))
+        self.btn6.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(5)) 
     
         #panel box
         self.box_gray.setStyleSheet("QLabel { border: 2px solid gray; background-color: #dedfdf;}")
@@ -325,7 +325,24 @@ class  Interface(QMainWindow, interface):
 
 
 
+
+
+    # def updatePen(self, )
+
     def statDaily(self):
+        for year in range(2024, 2025+1):
+            self.cbYear.addItem(str(year))
+        for month in range (1,12+1):
+            self.cbMonth.addItem(str(month))
+        for day in range(1,31+1):
+            self.cbDay.addItem(str(day))
+
+        current_date = datetime.now()
+        self.cbYear.setCurrentText(str(current_date.year))
+        self.cbMonth.setCurrentText(str(current_date.month))
+        self.cbDay.setCurrentText(str(current_date.day))
+        
+        
         cur = self.local.cursor()
         query = """
                 SELECT DATE(r.Date) AS violation_date, COUNT(*) AS violation_count
@@ -336,27 +353,55 @@ class  Interface(QMainWindow, interface):
         cur.execute(query)
         results = cur.fetchall()
 
-        series = QLineSeries()
+        
+        db_data = {str(row[0]): row[1] for row in results}  # e.g., {"2025-03-01": 5, ...}
+
+        # Determine the date range (e.g., from earliest in DB to current date)
+        if results:
+            start_date = datetime.strptime(min(db_data.keys()), "%Y-%m-%d")
+            end_date = datetime.now()  # Or use max(db_data.keys()) for DB-only range
+        else:
+            start_date = datetime(2024, 1, 1)  # Fallback start date
+            end_date = datetime.now()  # Fallback end date
+
+        # Create series
+        series = QLineSeries()  
         series.setName("Daily Reports")
 
+        # Get the selected date from combo boxes
+        selected_year = int(self.cbYear.currentText())
+        selected_month = int(self.cbMonth.currentText())
+        selected_day = int(self.cbDay.currentText())
+        selected_date = QDateTime(selected_year, selected_month, selected_day, 0, 0)
+        selected_date_ms = selected_date.toMSecsSinceEpoch()
+
+        # Generate all dates in the range and append to series
+
+        # if selected_date_ms:
+        #     current_date = selected_date_ms
+        # else:
+        #     
+        current_date = start_date
         
-        for result in results:
-            violation_date, violation_count = result
-            # Convert the date to a QDateTime object
-            date = QDateTime.fromString(str(violation_date), "yyyy-MM-dd")
-            # QLineSeries expects x-axis as milliseconds since epoch
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            violation_count = db_data.get(date_str, 0)  # Default to 0 if date not in DB
+            date = QDateTime.fromString(date_str, "yyyy-MM-dd")
             x = date.toMSecsSinceEpoch()
             y = violation_count
             series.append(x, y)
+            current_date += timedelta(days=1)
 
-        # Create the chart and add the series
+        
+
+      
         chart = QChart()
         chart.addSeries(series)
         chart.legend().hide()
 
         # Configure the x-axis (dates)
         axisX = QDateTimeAxis()
-        axisX.setTickCount(8)  # Adjust based on your data range
+        axisX.setTickCount(9)  # Adjust based on your data range
         axisX.setFormat("MM-dd")  # Date format for labels
         axisX.setTitleText("Date")
         chart.addAxis(axisX, Qt.AlignBottom)
@@ -369,7 +414,7 @@ class  Interface(QMainWindow, interface):
         chart.addAxis(axisY, Qt.AlignLeft)
         series.attachAxis(axisY)
 
-        series.setPen(QPen(QColor("#09DB7F"), 2))  # Blue line, 2px thick
+        series.setPen(QPen(QColor("#09DB7F"), 2))
         series.setPointsVisible(True)
 
         # Create the chart view and add it to page4
@@ -411,9 +456,11 @@ class  Interface(QMainWindow, interface):
             cur.execute(query)  # Use parameterized query
             result = cur.fetchone()
             return result[0] if result else "Unknown"  # Return name or "Unknown" if no match
+        
         except mysql.connector.Error as e:
             print(f"Error in convertIDtoName: {e}")
             return None
+        
         finally:
             cur.close()  
     
@@ -443,22 +490,43 @@ class  Interface(QMainWindow, interface):
             self.table.setItem(rowIndex, 4, QTableWidgetItem(str(row[6])))  # Date
 
     
+    ''' update green panel '''
+    def checkSafety(self, typeName, red):  
+        cursor = self.local.cursor()
+        cursor.execute("SELECT * FROM SafeCase")
+        results = cursor.fetchall()
+
+        safe_case_map = {}
+        for row in results:
+            sid, wid, eid = row  # Unpack (SID, WID, EID)
+            event_type_name = self.convertIDtoName("EventType", wid)
+            equipment_name = self.convertIDtoName("Equipment", eid)
+            if event_type_name not in safe_case_map:
+                safe_case_map[event_type_name] = []  # Initialize list for this event type
+            safe_case_map[event_type_name].append(equipment_name)  # Append equipment name
+        
+        for key in safe_case_map:
+            if typeName == key:
+                safe_equipment = [eq for eq in safe_case_map[key] if eq not in red]
+                self.box_green.setText(", ".join(safe_equipment) if safe_equipment else "None TT")
 
 
-    ''' update grey, geen, red warning pannel '''
+    ''' update grey, red warning pannel '''
     def updatePanel(self, event):
         DT = int.from_bytes(event[0], "little") & 0x0F
-        print(event[2:])
+        #print(event[2:])
         parts = bytes(event[2:].data()).decode().split('+')
-        parts = [part.strip() for part in parts]  # strip space
-
-        typeName, red = parts
+        parts = [part.strip() for part in parts]  # strip space ['work ', ' equip ', ' ' , ...]
+        print(parts)
         
+        typeName = parts[0]
+        red = parts[1:]
+        self.checkSafety(typeName, red) #split green and red panel
 
         if DT == 1:
             self.box_gray.setText(typeName)
-            self.box_red.setText(red)
-            if red == "쓰러짐" or red == "화재":
+            self.box_red.setText(str(red))
+            if red[0] == "쓰러짐" or red[0] == "화재":
                 msg = QMessageBox(self)
                 msg.setWindowTitle('Danger')
                 msg.setText(f'{red} 발생')

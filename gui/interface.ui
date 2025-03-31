@@ -219,7 +219,7 @@
              </font>
             </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>3</number>
             </property>
             <widget class="QWidget" name="page">
              <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -552,6 +552,41 @@
                    <property name="alignment">
                     <set>Qt::AlignCenter</set>
                    </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QFrame" name="frame_9">
+                   <property name="frameShape">
+                    <enum>QFrame::StyledPanel</enum>
+                   </property>
+                   <property name="frameShadow">
+                    <enum>QFrame::Raised</enum>
+                   </property>
+                   <layout class="QHBoxLayout" name="horizontalLayout_5">
+                    <item>
+                     <widget class="QLabel" name="label_2">
+                      <property name="font">
+                       <font>
+                        <family>Serif</family>
+                        <weight>75</weight>
+                        <bold>true</bold>
+                       </font>
+                      </property>
+                      <property name="text">
+                       <string>Start From ....</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QComboBox" name="cbYear"/>
+                    </item>
+                    <item>
+                     <widget class="QComboBox" name="cbMonth"/>
+                    </item>
+                    <item>
+                     <widget class="QComboBox" name="cbDay"/>
+                    </item>
+                   </layout>
                   </widget>
                  </item>
                  <item>
