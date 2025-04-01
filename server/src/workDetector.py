@@ -106,7 +106,7 @@ class WorkDetector:
         for worker in workerMasks:
             workerPolygon = np.array(worker, np.int32)
             x, workerY, _, workerH = cv2.boundingRect(workerPolygon)
-            if workerY + workerH - ladderY < ladderH * 0.2:
+            if workerY + workerH - ladderY < ladderH * 0.4:
                 isLadderViolation = True
                 break
         return isLadderViolation

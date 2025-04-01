@@ -21,6 +21,9 @@ class SocketManager:
         self.detectedEvent = set()
         self.detectedTime = None
         
+        self.canRemoveEvent = False
+        self.timer = None
+        
     def setHandlers(self, mainServerHandler, espHandler):
         self.mainServerHandler = mainServerHandler
         self.espHandler = espHandler
@@ -32,6 +35,10 @@ class SocketManager:
     def sendToMainServer(self, data):
         if self.mainServerHandler:
             threading.Thread(target=self.mainServerHandler.send, args=(data, ), daemon=True).start()
+            
+    def canRemove(self):
+        self.canRemoveEvent = True
+        self.timer = False
             
     def predictEvent(self, img):
         imgrgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -68,69 +75,73 @@ class SocketManager:
         if self.workDetector.isWorkDetected(workResults):
             masks = self.workDetector.getMasks(workResults)
             detectedClasses = self.workDetector.getDetectedClasses(workResults)
+            
+            isOtherWorkDetected = False
             # Ladder detected
             if self.workDetector.isLadderDetected(detectedClasses):
                 # Worker detected
                 if self.workDetector.isWorkerDetected(detectedClasses):
+                    isOtherWorkDetected = True
                     helmetResults = self.workDetector.helmetModel.predict(img, verbose=False, conf=0.5)
                     # Helmet deteceted
                     if self.workDetector.isHelmetDetected(helmetResults):
-                        self.sendDetectCommand(0x30, 1, "사다리 작업 위반", "안전모")
+                        self.sendDetectCommand(0x30, 1, "사다리작업 위반", "안전모")
                     else:
-                        self.sendDetectCommand(0x31, 1, "사다리 작업 위반", "안전모")
+                        self.sendDetectCommand(0x31, 1, "사다리작업 위반", "안전모")
                     ladderIdx = detectedClasses.index("WO-03")
                     ladderPolygon = masks[ladderIdx]
                     workerMasks = self.workDetector.getWorkerMasks(workResults)
                     # Ladder work violation detected
                     if self.workDetector.isLadderWorkViolation(ladderPolygon, workerMasks):
-                        self.sendDetectCommand(0x31, 1, "사다리 작업 위반", "최상단 밑단 작업")
+                        self.sendDetectCommand(0x31, 1, "사다리작업 위반", "최상단 밑단 작업")
                     else:
-                        self.sendDetectCommand(0x30, 1, "사다리 작업 위반", "최상단 밑단 작업")
+                        self.sendDetectCommand(0x30, 1, "사다리작업 위반", "최상단 밑단 작업")
             else:
-                self.sendDetectCommand(0x30, 1, "사다리 작업 위반")
+                self.sendDetectCommand(0x30, 1, "사다리작업 위반")
             
             # Welding detected                    
             if self.workDetector.isWeldingDetected(detectedClasses):
                 # Welding mask detected
                 if self.workDetector.isWeldingmaskDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "용접 작업 위반", "용접가면")
+                    self.sendDetectCommand(0x30, 1, "용접작업 위반", "용접가면")
                 else:
-                    self.sendDetectCommand(0x31, 1, "용접 작업 위반", "용접가면")
+                    self.sendDetectCommand(0x31, 1, "용접작업 위반", "용접가면")
                 # Fire distinguisher detected
                 if self.workDetector.isFireExtinguisherDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "용접 작업 위반", "소화기")
+                    self.sendDetectCommand(0x30, 1, "용접작업 위반", "소화기")
                 else:
-                    self.sendDetectCommand(0x31, 1, "용접 작업 위반", "소화기")
+                    self.sendDetectCommand(0x31, 1, "용접작업 위반", "소화기")
             else:
-                self.sendDetectCommand(0x30, 1, "용접 작업 위반")
+                self.sendDetectCommand(0x30, 1, "용접작업 위반")
             # Cutting detected 
             if self.workDetector.isCuttingDetected(detectedClasses):
+                isOtherWorkDetected = True
                 # Spark depense detected
                 if self.workDetector.isSparkDepenseDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "절삭 작업 위반", "불티산방지막")
+                    self.sendDetectCommand(0x30, 1, "절삭작업 위반", "불티산방지막")
                 else:
-                    self.sendDetectCommand(0x31, 1, "절삭 작업 위반", "불티산방지막")
+                    self.sendDetectCommand(0x31, 1, "절삭작업 위반", "불티산방지막")
                 # Fire distinguisher detected
                 if self.workDetector.isFireExtinguisherDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "절삭 작업 위반", "소화기")
+                    self.sendDetectCommand(0x30, 1, "절삭작업 위반", "소화기")
                 else:
-                    self.sendDetectCommand(0x31, 1, "절삭 작업 위반", "소화기")
+                    self.sendDetectCommand(0x31, 1, "절삭작업 위반", "소화기")
                 # Helmet detected
                 if self.workDetector.isHelmetDetected(helmetResults):
-                    self.sendDetectCommand(0x30, 1, "절삭 작업 위반", "안전모")
+                    self.sendDetectCommand(0x30, 1, "절삭작업 위반", "안전모")
                 else:
-                    self.sendDetectCommand(0x31, 1, "절삭 작업 위반", "안전모")
+                    self.sendDetectCommand(0x31, 1, "절삭작업 위반", "안전모")
             else:
-                self.sendDetectCommand(0x30, 1, "절삭 작업 위반")
+                self.sendDetectCommand(0x30, 1, "절삭작업 위반")
             # Worker detected
-            if self.workDetector.isWorkerDetected(detectedClasses):
+            if self.workDetector.isWorkerDetected(detectedClasses) and isOtherWorkDetected == False:
                 # Helmet detected
                 if self.workDetector.isHelmetDetected(helmetResults):
-                    self.sendDetectCommand(0x30, 1, "장비 위반", "안전모")
+                    self.sendDetectCommand(0x30, 1, "장비위반", "안전모")
                 else:
-                    self.sendDetectCommand(0x31, 1, "장비 위반", "안전모")
+                    self.sendDetectCommand(0x31, 1, "장비위반", "안전모")
             else:
-                self.sendDetectCommand(0x30, 1, "장비 위반")
+                self.sendDetectCommand(0x30, 1, "장비위반")
                     
             for idx, mask in enumerate(masks):
                 # 다각형 좌표를 numpy 배열로 변환
@@ -150,15 +161,40 @@ class SocketManager:
             joinedEvent = typeName + "+" + event
             if joinedEvent in self.detectedEvent:
                 if header == 0x30:
+                    if self.canRemoveEvent == False:
+                        if self.timer:
+                            return
+                        self.timer = threading.Timer(2, self.canRemove).start()
+                        return
+                    self.canRemoveEvent = False
+                    print("REMOVE")
                     self.detectedEvent.remove(joinedEvent)
                 else:
                     return
             else:
                 if header == 0x31:
+                    if self.canRemoveEvent == False:
+                        if self.timer:
+                            return
+                        self.timer = threading.Timer(2, self.canRemove).start()
+                        return
+                    self.canRemoveEvent = False
+                    if typeName not in self.detectedEvent and typeName != "사고":
+                        self.detectedEvent.add(typeName)
                     self.detectedEvent.add(joinedEvent)
                 else:
                     return
         else:
+            if typeName not in self.detectedEvent:
+                return
+            if self.canRemoveEvent == False:
+                if self.timer:
+                    return
+                self.timer = threading.Timer(2, self.canRemove).start()
+                return
+            self.canRemoveEvent = False
+            print("REMOVE")
+            threading.Timer(1, self.canRemove).start()
             joinedEvent = typeName
             copyEvent = self.detectedEvent.copy()
             hasEvent = False
@@ -169,17 +205,16 @@ class SocketManager:
                 if hasEvent == False:
                     return
         joinedEvent = joinedEvent.encode("utf-8")
-        
+        print(self.detectedEvent)
         print("sendDetect")
         dataToSend = struct.pack(f"<IBB{len(joinedEvent)}s", len(joinedEvent) + 2, header, robotID, joinedEvent)
-        print(dataToSend)
         self.sendToMainServer(dataToSend)
             
     def displayFrame(self):
         frame = self.displayQueue.get()
         frame = self.predictEvent(frame)
         cv2.imshow("Stream", frame)
-        cv2.waitKey(1)
+        cv2.waitKey(30)
         self.displayQueue.task_done()
    
 class ESPSocketHandler(SocketHandler):
@@ -206,12 +241,13 @@ class ESPSocketHandler(SocketHandler):
             if prevFrame != frameNum:
                 chunkBuffer = {}
             chunkBuffer[chunkIdx] = chunkData
-            
+            self.manager.sendToMainServer(data)
             if len(chunkBuffer.keys()) == chunks:
                 frame_data = b''.join(chunkBuffer[i] for i in sorted(chunkBuffer.keys()))
                 frame_array = np.frombuffer(frame_data, dtype=np.uint8)
                 frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
-                self.frameQueue.put(frame_data)
+                if frameNum % 2 == 0:
+                    self.frameQueue.put(frame_data)
 
             prevFrame = frameNum
             
@@ -221,18 +257,6 @@ class ESPSocketHandler(SocketHandler):
         frame_count = 0
         while True:
             frame_data = self.frameQueue.get()
-            chunk = 10240
-            imgSize = len(frame_data)
-            chunks = (imgSize + chunk - 1) // chunk
-            
-            for i in range(chunks):
-                offset = i * chunk
-                imgChunkSize = min(chunk, imgSize - offset)
-                totalSize = imgSize + 10
-                
-                self.manager.sendToMainServer(struct.pack(f"<IBBBHB{imgSize}s", totalSize, 0x10, 0x01, chunks, 
-                                              frameNum, i, frame_data[offset:offset+imgChunkSize]))
-                
             frame_array = np.frombuffer(frame_data, dtype=np.uint8)
             frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
             self.manager.displayQueue.put(frame)

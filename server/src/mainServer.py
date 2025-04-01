@@ -188,7 +188,7 @@ class AIServerSocket(SocketHandler):
             frame = self.displayQueue.get()
             frame = cv2.resize(frame, (640, 480))
             cv2.imshow("Stream", frame)
-            cv2.waitKey(1)
+            cv2.waitKey(30)
             self.displayQueue.task_done()
             
 class SocketManager:
@@ -214,7 +214,7 @@ class SocketManager:
             
     def sendToAIServer(self, data, server=None):
         if self.aiHanlder:
-            self.guiHandler.send(data)  
+            self.aiHandler.send(data)  
             
     def getStatus(self, robotID):
         header = 0x50
