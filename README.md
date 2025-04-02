@@ -74,39 +74,46 @@
 
 # 2. 설계
 ## 2-1. 주요 기능
-![Screenshot from 2025-04-02 12-11-09](https://github.com/user-attachments/assets/0a17c591-875f-464d-85ed-c78fe6ad9a86)
+
+<img src="https://github.com/user-attachments/assets/0a17c591-875f-464d-85ed-c78fe6ad9a86" alt="주요 기능" width="1000"/>
+
 
 ## 2-2. 시스템 구성도
-![sw_architecture drawio](https://github.com/user-attachments/assets/c4cec64c-fce8-4333-8cac-4ac386ad375f)
+
+<img src="https://github.com/user-attachments/assets/c4cec64c-fce8-4333-8cac-4ac386ad375f" alt="시스템 구성도" width="1000"/>
 
 ## 2-3. Data Structure
-![TF_ERD drawio](https://github.com/user-attachments/assets/647de690-6a3f-4b6f-a3ca-f3c978d5c174)
+
+<img src="https://github.com/user-attachments/assets/647de690-6a3f-4b6f-a3ca-f3c978d5c174" alt="data structure" width="1000"/>
+
 
 ## 2-4. 시퀀스 다이어그램
 
 ## 2-5. GUI
 
-<img src="https://github.com/user-attachments/assets/02da4599-988c-46a1-89c2-c039d5b48128" alt="인명 사고 예방" width="500"/>
-<img src="https://github.com/user-attachments/assets/18becab3-9681-4e39-8ff9-65c0bbf207e2" alt="인명 사고 예방" width="500"/>
+<img src="https://github.com/user-attachments/assets/02da4599-988c-46a1-89c2-c039d5b48128" alt="인명 사고 예방" width="1000"/>
+<img src="https://github.com/user-attachments/assets/18becab3-9681-4e39-8ff9-65c0bbf207e2" alt="인명 사고 예방" width="1000"/>
 
+## 2-5. 딥러닝 모델
+## 데이터셋
+### 데이터 셋: [AI-HUB 건설 현장 위험 상태 판단 데이터](https://www.aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&dataSetSn=71407)
+### 전처리 과정: 정규화, 증강 등 전처리 방법
 
+## 모델 아키텍처
+- **모델 개요:** YOLO8n-seg, 
+- **하이퍼파라미터:**
+epochs: 100
+patience: 100
+batch: 16
+imgsz: 640
+optimizer: adam
+- **특이사항:** 모델 개선을 위한 기법이나 추가 아이디어
 
 # 3. 기능
 ## 3-1.
 ## 3-2.
 ## 3-3.
 
-# 4. 딥러닝 학습
-## 데이터셋
-사용한 데이터셋과 데이터 전처리 방법에 대해 기술합니다.
-- **데이터 출처:** 공개 데이터셋 혹은 자체 수집 데이터
-- **전처리 과정:** 정규화, 증강 등 전처리 방법
-
-## 모델 아키텍처
-모델의 구성 및 학습 전략을 소개합니다.
-- **모델 개요:** 사용한 네트워크 구조 (CNN, RNN, Transformer 등)
-- **하이퍼파라미터:** 학습률, 배치 사이즈, 에폭 등
-- **특이사항:** 모델 개선을 위한 기법이나 추가 아이디어
 
 
 # 5. 결론
