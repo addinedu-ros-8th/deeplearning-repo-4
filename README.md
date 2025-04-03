@@ -89,6 +89,16 @@
 
 ## 2-4. 시퀀스 다이어그램
 
+### Streaming Sequence diagram
+<img src="https://github.com/user-attachments/assets/3322af13-384e-49f9-bcc2-b57a3d09bfdd" width="500"/>
+
+### Detect Sequence diagram
+<img src="https://github.com/user-attachments/assets/be06ab33-7ab8-440c-a4f7-29d6a8a34ed0" width="500"/>
+
+### Control driving Sequence diagram
+<img src="https://github.com/user-attachments/assets/61263244-34b0-4742-8d3a-9083549423cc" width="500"/>
+
+
 ## 2-5. GUI
 
 <img src="https://github.com/user-attachments/assets/02da4599-988c-46a1-89c2-c039d5b48128" alt="인명 사고 예방" width="1000"/>
@@ -100,27 +110,20 @@
 ### 전처리 과정: 정규화, 증강 등 전처리 방법
 
 ## 모델 아키텍처
-- **모델 개요:** YOLO8n-seg, 
-- **하이퍼파라미터:**
-epochs: 100
-patience: 100
-batch: 16
-imgsz: 640
-optimizer: adam
-- **특이사항:** 모델 개선을 위한 기법이나 추가 아이디어
+- 모델 개요: yolov8n-seg, yolov8m.pt 
+- optimizer: adam, SGD
+- 특이사항: 모델 개선을 위한 기법이나 추가 아이디어
 
 # 3. 기능
-## 3-1.
-## 3-2.
-## 3-3.
+## 3-1. 상황인식기능
+## 3-2. 영상송신기능
+## 3-3. 자율주행기능
 
 
 
-# 5. 결론
-
-## 5-1. 통합 테스트 결과
-
-## 5-2. 개발시 어려웠던 점과 해결방안
+# 4. 결론
+## 4-1. 통합 테스트 결과
+## 4-2. 개발시 어려웠던 점과 해결방안
 
 ## 설치 및 실행 방법
 프로젝트를 로컬에서 실행할 수 있도록 환경 설정 및 실행 방법을 안내합니다.
