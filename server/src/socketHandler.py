@@ -1,6 +1,7 @@
 import socket
 import threading
 from queue import Queue
+import time
 
 class SocketHandler:
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
@@ -40,7 +41,7 @@ class SocketHandler:
                         break
                     except ConnectionRefusedError as e:
                         continue
-        
+
         if self.mode == "server" or self.type == socket.SOCK_STREAM:
             self.packetQueue = Queue()
             threading.Thread(target=self.processData, daemon=True).start()
@@ -54,12 +55,14 @@ class SocketHandler:
                     if not data and self.type == socket.SOCK_STREAM:
                         print(f"{self.socketName} is disconnected")
                         print("Reconnecting..")
+                        self.client.close()
                         self.reconnect()
                         
                     self.packetQueue.put(data)
                     
                 except Exception as e:
                     print(f"Error: {e}")
+                    time.sleep(1)
                     if self.type == socket.SOCK_STREAM:
                         self.client.close()
                     break
@@ -72,4 +75,4 @@ class SocketHandler:
                 elif self.type == socket.SOCK_DGRAM:
                     self.client.sendto(data, (self.host, self.port))
         except Exception as e:
-            print(f"Error : {e}")
+            pass

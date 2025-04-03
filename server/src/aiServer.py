@@ -1,4 +1,3 @@
-import socket
 import threading
 import struct
 import cv2
@@ -6,8 +5,6 @@ import numpy as np
 from socketHandler import SocketHandler
 from queue import Queue
 import time
-from ultralytics import YOLO
-import mediapipe as mp
 from workDetector import WorkDetector
 
 class SocketManager:
@@ -18,11 +15,19 @@ class SocketManager:
         
         self.displayQueue = Queue()
         
-        self.detectedEvent = set()
-        self.detectedTime = None
+        self.detectedEvent = {}
+        self.detectedAccident = set()
+        self.fallenDetectedTime = None
+        self.fireDetectedTime = None
         
-        self.canRemoveEvent = False
+        self.canDetectEvent = False
         self.timer = None
+        
+        self.frameChunkSize = 9
+        self.idx = 0
+        
+        self.accident = {}
+        self.event = {}
         
     def setHandlers(self, mainServerHandler, espHandler):
         self.mainServerHandler = mainServerHandler
@@ -37,8 +42,8 @@ class SocketManager:
             threading.Thread(target=self.mainServerHandler.send, args=(data, ), daemon=True).start()
             
     def canRemove(self):
-        self.canRemoveEvent = True
-        self.timer = False
+        self.canDetectEvent = True
+        self.timer = None
             
     def predictEvent(self, img):
         imgrgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -51,26 +56,32 @@ class SocketManager:
         
         # Fallen person detected        
         if self.workDetector.isFallenPersonDetected(img, poseResults):
-            if self.detectedTime is None:
-                self.detectedTime = time.time()
+            if self.fallenDetectedTime is None:
+                self.fallenDetectedTime = time.time()
+                self.accident["감지"] = self.accident.get("감지", 0) + 1
             else:
-                durationTime = time.time() - self.detectedTime
+                durationTime = time.time() - self.fallenDetectedTime
                 print(durationTime)
                 if durationTime >= 5:
-                    self.sendDetectCommand(0x31, 1, "사고", "쓰러짐")
-                        
+                    self.accident["쓰러짐"] = self.accident.get("쓰러짐", 0) + 1
         else:
-            self.detectedTime = None
-            self.sendDetectCommand(0x30, 1, "사고", "쓰러짐")
+            self.fallenDetectedTime = None
         
         # Fire detected    
         if self.workDetector.isFireDetected(fireResults):
-            self.sendDetectCommand(0x31, 1, "사고", "화재")
+            if self.fireDetectedTime is None:
+                self.fireDetectedTime = time.time()
+                self.accident["감지"] = self.accident.get("감지", 0) + 1
+            else:
+                durationTime = time.time() - self.fireDetectedTime
+                print(durationTime)
+                if durationTime >= 2:
+                    self.accident["화재"] = self.accident.get("화재", 0) + 1
             for box in fireResults[0].boxes:
                 xyxy = box.xyxy
                 cv2.rectangle(newImg, (int(xyxy[0][0]), int(xyxy[0][1])), (int(xyxy[0][2]), int(xyxy[0][3])), (0, 0, 255), 2)
         else:
-            self.sendDetectCommand(0x30, 1, "사고", "화재")
+            self.fireDetectedTime = None
         
         if self.workDetector.isWorkDetected(workResults):
             masks = self.workDetector.getMasks(workResults)
@@ -79,69 +90,71 @@ class SocketManager:
             isOtherWorkDetected = False
             # Ladder detected
             if self.workDetector.isLadderDetected(detectedClasses):
+                temp = []
                 # Worker detected
                 if self.workDetector.isWorkerDetected(detectedClasses):
                     isOtherWorkDetected = True
                     helmetResults = self.workDetector.helmetModel.predict(img, verbose=False, conf=0.5)
                     # Helmet deteceted
-                    if self.workDetector.isHelmetDetected(helmetResults):
-                        self.sendDetectCommand(0x30, 1, "사다리작업 위반", "안전모")
-                    else:
-                        self.sendDetectCommand(0x31, 1, "사다리작업 위반", "안전모")
+                    if not self.workDetector.isHelmetDetected(helmetResults):
+                        temp.append("안전모")
+            
                     ladderIdx = detectedClasses.index("WO-03")
                     ladderPolygon = masks[ladderIdx]
                     workerMasks = self.workDetector.getWorkerMasks(workResults)
                     # Ladder work violation detected
                     if self.workDetector.isLadderWorkViolation(ladderPolygon, workerMasks):
-                        self.sendDetectCommand(0x31, 1, "사다리작업 위반", "최상단 밑단 작업")
-                    else:
-                        self.sendDetectCommand(0x30, 1, "사다리작업 위반", "최상단 밑단 작업")
-            else:
-                self.sendDetectCommand(0x30, 1, "사다리작업 위반")
+                        temp.append("최상단 밑단 작업")
+                if len(temp) > 0:
+                    self.event.setdefault("사다리작업 위반", {})
+                    for each in temp:
+                        self.event["사다리작업 위반"][each] = self.event["사다리작업 위반"].get(each, 0) + 1
             
             # Welding detected                    
             if self.workDetector.isWeldingDetected(detectedClasses):
+                temp = []
                 # Welding mask detected
-                if self.workDetector.isWeldingmaskDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "용접작업 위반", "용접가면")
-                else:
-                    self.sendDetectCommand(0x31, 1, "용접작업 위반", "용접가면")
+                if not self.workDetector.isWeldingmaskDetected(detectedClasses):
+                    temp.append("용접가면")
+        
                 # Fire distinguisher detected
-                if self.workDetector.isFireExtinguisherDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "용접작업 위반", "소화기")
-                else:
-                    self.sendDetectCommand(0x31, 1, "용접작업 위반", "소화기")
-            else:
-                self.sendDetectCommand(0x30, 1, "용접작업 위반")
+                if not self.workDetector.isFireExtinguisherDetected(detectedClasses):
+                    temp.append("소화기")
+                if len(temp) > 0:
+                    self.event.setdefault("용접작업 위반", {})
+                    
+                    for each in temp:
+                        self.event["용접작업 위반"][each] = self.event["용접작업 위반"].get(each, 0) + 1
+                    
             # Cutting detected 
             if self.workDetector.isCuttingDetected(detectedClasses):
+                temp = []
                 isOtherWorkDetected = True
                 # Spark depense detected
-                if self.workDetector.isSparkDepenseDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "절삭작업 위반", "불티산방지막")
-                else:
-                    self.sendDetectCommand(0x31, 1, "절삭작업 위반", "불티산방지막")
+                if not self.workDetector.isSparkDepenseDetected(detectedClasses):
+                    temp.append("불티산방지막")
+
                 # Fire distinguisher detected
-                if self.workDetector.isFireExtinguisherDetected(detectedClasses):
-                    self.sendDetectCommand(0x30, 1, "절삭작업 위반", "소화기")
-                else:
-                    self.sendDetectCommand(0x31, 1, "절삭작업 위반", "소화기")
+                if not self.workDetector.isFireExtinguisherDetected(detectedClasses):
+                    temp.append("소화기")
+
                 # Helmet detected
-                if self.workDetector.isHelmetDetected(helmetResults):
-                    self.sendDetectCommand(0x30, 1, "절삭작업 위반", "안전모")
-                else:
-                    self.sendDetectCommand(0x31, 1, "절삭작업 위반", "안전모")
-            else:
-                self.sendDetectCommand(0x30, 1, "절삭작업 위반")
+                if not self.workDetector.isHelmetDetected(helmetResults):
+                    temp.append("안전모")
+                if len(temp) > 0:
+                    self.event.setdefault("장비 위반", {})
+                    
+                    for each in temp:
+                        self.event["장비 위반"][each] = self.event["장비 위반"].get(each, 0) + 1
             # Worker detected
             if self.workDetector.isWorkerDetected(detectedClasses) and isOtherWorkDetected == False:
+                temp = []
                 # Helmet detected
-                if self.workDetector.isHelmetDetected(helmetResults):
-                    self.sendDetectCommand(0x30, 1, "장비위반", "안전모")
-                else:
-                    self.sendDetectCommand(0x31, 1, "장비위반", "안전모")
-            else:
-                self.sendDetectCommand(0x30, 1, "장비위반")
+                if not self.workDetector.isHelmetDetected(helmetResults):
+                    temp.append("안전모")
+                if len(temp) > 0:
+                    for each in temp:
+                        self.event["장비 위반"][each] = self.event["장비 위반"].get(each, 0) + 1
                     
             for idx, mask in enumerate(masks):
                 # 다각형 좌표를 numpy 배열로 변환
@@ -153,57 +166,72 @@ class SocketManager:
                 
                 # 이미지에 바운딩 박스 그리기
                 cv2.rectangle(newImg, (x, y), (x + w, y + h), (0, 255, 0), 2)  # 초록색 박스
-        
+                
+        self.idx = (self.idx + 1) % self.frameChunkSize
+        if self.idx == 4:
+            event = {type: each for type, value in self.event.items() for each, number in value.items() if number >= 3}
+            accident = {type for type in self.accident.keys()}
+            
+            self.event.clear()
+            self.accident.clear()
+                    
+            self.processEvent(event)
+            self.processAccident(accident)
         return newImg
     
-    def sendDetectCommand(self, header, robotID, typeName, event=None):
-        if event is not None:
-            joinedEvent = typeName + "+" + event
-            if joinedEvent in self.detectedEvent:
-                if header == 0x30:
-                    if self.canRemoveEvent == False:
-                        if self.timer:
-                            return
-                        self.timer = threading.Timer(2, self.canRemove).start()
-                        return
-                    self.canRemoveEvent = False
-                    print("REMOVE")
-                    self.detectedEvent.remove(joinedEvent)
-                else:
-                    return
+    def processEvent(self, eventDic):
+        isUpdate = False
+        for type, event in eventDic.items():
+            if type not in self.detectedEvent:
+                isUpdate = True
             else:
-                if header == 0x31:
-                    if self.canRemoveEvent == False:
-                        if self.timer:
-                            return
-                        self.timer = threading.Timer(2, self.canRemove).start()
-                        return
-                    self.canRemoveEvent = False
-                    if typeName not in self.detectedEvent and typeName != "사고":
-                        self.detectedEvent.add(typeName)
-                    self.detectedEvent.add(joinedEvent)
+                for each in event:
+                    if each not in iter(self.detectedEvent[type]):
+                        isUpdate = True
+        for type, event in self.detectedEvent.items():
+            if type not in eventDic:
+                isUpdate = True
+            else:
+                for each in iter(event):
+                    if each not in eventDic[type]:
+                        isUpdate = True
+        if isUpdate:
+            if self.canDetectEvent == False:
+                if self.timer is not None:
+                    return
+                self.timer = threading.Timer(1, self.canRemove).start()
+                self.canDetectEvent = False
+                return
+            self.canDetectEvent = False
+            self.detectedEvent = eventDic
+            eventList = []
+            keys = self.detectedEvent.keys()
+            for key in keys:
+                li = []
+                li.append(key)
+                if len(self.detectedEvent[key]) > 1:
+                    li.extend(list(self.detectedEvent[key]))
                 else:
-                    return
+                    li.append(next(iter(self.detectedEvent[key])))
+                eventList.append('+'.join(li))
+            joinedEvent = '/'.join(eventList)
+            print(joinedEvent)
+            self.sendDetectCommand(0x31, 1, event=joinedEvent)
+            
+    def processAccident(self, accidentSet):
+        for each in accidentSet:
+            if each not in self.detectedAccident:
+                self.sendDetectCommand(0x31, 1, "사고", each)
+        for each in self.detectedAccident:
+            if each not in accidentSet:
+                self.sendDetectCommand(0x30, 1, "사고", each)
+        self.detectedAccident = accidentSet
+            
+    def sendDetectCommand(self, header, robotID, typeName=None, event=None):
+        if typeName == None:
+            joinedEvent = event
         else:
-            if typeName not in self.detectedEvent:
-                return
-            if self.canRemoveEvent == False:
-                if self.timer:
-                    return
-                self.timer = threading.Timer(2, self.canRemove).start()
-                return
-            self.canRemoveEvent = False
-            print("REMOVE")
-            threading.Timer(1, self.canRemove).start()
-            joinedEvent = typeName
-            copyEvent = self.detectedEvent.copy()
-            hasEvent = False
-            for each in copyEvent:
-                if joinedEvent in each:
-                    self.detectedEvent.remove(each)
-                    hasEvent = True
-                if hasEvent == False:
-                    return
+            joinedEvent = typeName + '+' + event
         joinedEvent = joinedEvent.encode("utf-8")
         print(self.detectedEvent)
         print("sendDetect")
@@ -214,7 +242,7 @@ class SocketManager:
         frame = self.displayQueue.get()
         frame = self.predictEvent(frame)
         cv2.imshow("Stream", frame)
-        cv2.waitKey(30)
+        cv2.waitKey(1)
         self.displayQueue.task_done()
    
 class ESPSocketHandler(SocketHandler):

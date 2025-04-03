@@ -1,13 +1,12 @@
-import socket
 import threading
 import struct
-from Camera import Camera
 import cv2
 import numpy as np
 from socketHandler import SocketHandler
 from DbController import DbController
 from queue import Queue
 import time
+import socket
 
 class GUISocketHandler(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
@@ -24,29 +23,11 @@ class GUISocketHandler(SocketHandler):
             packetSize = int.from_bytes(data[:4], "little")
             header = data[4]
             cmd = header >> 4
-            if cmd == 0x00:
-                print("getStream")
-                robotID = data[5]
-                self.manager.sendToESP(data)
-                if header == 0x00:
-                    targetStatus = 0b00000100
-                elif header == 0x01:
-                    targetStatus = 0b00000000
-                    
-                self.manager.getStatus(robotID)
-                self.resend(self.manager.sendToESP, data, targetStatus, 5)
-                
-            elif cmd == 0x02:
+            
+            if cmd == 0x02:
                 print("setDriveMode")
                 self.robotID = data[5]
                 self.manager.sendToESP(data)
-                if header == 0x20:
-                    targetStatus = 0b00000000
-                elif header == 0x21:
-                    targetStatus = 0b00000010
-                    
-                self.manager.getStatus(robotID)
-                self.resend(self.manager.sendToESP, data, targetStatus, 5)
                 
             elif cmd == 0x04:
                 print("requestGrant")
@@ -74,18 +55,24 @@ class ESPSocketHandler(SocketHandler):
         super().__init__(mode, host, port, type, manager)
         self.socketName = "ESP Socket"
         
-    def processData(self):
-        while True:
-            data = self.packetQueue.get()
-            if len(data) < 4:
-                continue
-            packetSize = int.from_bytes(data[:4], "little")
+    def listen(self):
+        self.server = socket.socket(socket.AF_INET, self.type)
+        self.server.bind((self.host, self.port))
+        self.server.listen(5)
+        print(f"{self.socketName} is connecting..")
+        self.client, self.addr = self.server.accept()
+        print(f"{self.socketName} is connected : {self.addr}")
+        
+    def send(self, data):
+        maxRetry = 5
+        retry = 0
+        if self.client:
             header = data[4]
-            cmd = header >> 4
-            
-            if header == 0x51:
-                robotID = data[5]
-                self.manager.robotStatus = data[7]
+            if header == 0x20:
+                targetStatus = data[6]
+                self.client.settimeout(1)
+                self.client.send(data)
+                    
                
 class AIServerSocket(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="udp", manager=None):
@@ -98,10 +85,12 @@ class AIServerSocket(SocketHandler):
             
     def processData(self):
         prevFrame = -1
+        
         while True:
             data = self.packetQueue.get()
             if len(data) < 4:
                 continue
+            
             packetSize = int.from_bytes(data[:4], "little")
             header = data[4]
             cmd = header >> 4 # check left half byte of header
@@ -121,42 +110,41 @@ class AIServerSocket(SocketHandler):
                     self.frameQueue.put(frame_data)
 
                 prevFrame = frameNum
+            elif cmd == 2:
+                self.manager.sendToESP(data)
             elif cmd == 3: # detect
                 robotID = data[5]
-                event = data[6:].decode("utf-8")
+                event = data[6:]
+                parsedEvent = event.decode("utf-8").split('+')
+
                 if header == 0x30:
-                    print("POP", event)
-                    if '+' in event:
-                        self.manager.detectedEvent.remove(event)
-                    else:
-                        copyEvent = self.manager.detectedEvent.copy()
-                        for each in copyEvent:
-                            if event in each:
-                                self.manager.detectedEvent.remove(each)
+                    if parsedEvent[0] == "사고":
+                        self.manager.detectedEvent.remove(parsedEvent[1])
                 elif header == 0x31:
-                    print("ADD", event)
-                    self.manager.detectedEvent.add(event)
+                    if parsedEvent[0] == "사고":
+                        self.manager.detectedEvent.add(parsedEvent[1])
                 
-                if '+' in event:
-                    typeName = event.split('+')[0]
-                    eventList = [each.split('+')[1] for each in self.manager.detectedEvent if typeName in each]
-                    eventList.insert(0, typeName)
-                    joinedEvent = '+'.join(eventList).encode("utf-8")
-                    print(eventList)
-                    data = struct.pack(f"<IBB{len(joinedEvent)}s", len(joinedEvent) + 2, header, robotID, joinedEvent)
+                data = struct.pack(f"<IBB{len(event)}s", len(event) + 2, header, robotID, event)
                 self.manager.sendToGUI(data)
-                
-                if len(self.manager.detectedEvent) == 0:
-                    targetStatus = 0b00000010
-                elif "쓰러짐" in self.manager.detectedEvent or "사고" in self.manager.detectedEvent:
-                    targetStatus = 0b00010000
+                print(self.manager.detectedEvent)
+                if len(self.manager.detectedEvent) > 0:
+                    if len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == "감지":
+                        targetStatus = 0b00000000 # Stop for detecting
+                        print("Stop for detecting")
+                    else:
+                        targetStatus = 0b00010000 # Accident, Stop
+                        print("Accident, Stop")
+                elif len(event) > 0:
+                    targetStatus = 0b00001000 # Violation, Stop
+                    print("Violation, Stop")
                 else:
-                    targetStatus = 0b00001000
-                data = struct.pack("<IBB", 2, 0x32, targetStatus)
+                    targetStatus = 0b00000010 # Driving
+                    print("Driving")
                 
-                self.manager.sendToESP(data)
-                self.manager.getStatus(robotID)
-                self.manager.resend(self.manager.sendToESP, data, targetStatus)
+                
+                data = struct.pack("<IBBB", 3, 0x20, 1, targetStatus)
+                
+                threading.Thread(target=self.manager.sendToESP, args=(data,)).start()
                 
     def processFrames(self):
         start_time = time.time()
@@ -220,16 +208,3 @@ class SocketManager:
         header = 0x50
         self.sendToESP(struct.pack("<IBB", 2, header, robotID))
         
-    def resend(self, command, data, targetStatus, maxAttempts= 5):
-        attempts = [0]
-        def checkAndResend():
-            
-            comparedStatus = self.robotStatus & targetStatus
-            if attempts[0] >= maxAttempts or comparedStatus == targetStatus:
-                return
-            else:
-                attempts[0] += 1
-                command(data)
-                threading.Timer(1, checkAndResend).start()
-                
-        checkAndResend()
