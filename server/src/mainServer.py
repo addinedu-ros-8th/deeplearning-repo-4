@@ -132,9 +132,15 @@ class AIServerSocket(SocketHandler):
                 eventToSend = parsedEvent.copy()
                 if "감지" in eventToSend:
                     eventToSend.remove("감지")
+                print(eventToSend)
                 if len(eventToSend) > 1:
+                    print(eventToSend)
                     eventToSend = '+'.join(eventToSend).encode("utf-8")
-                    data = struct.pack(f"<IBB{len(event)}s", len(event) + 2, header, robotID, eventToSend)
+                    data = struct.pack(f"<IBB{len(eventToSend)}s", len(eventToSend) + 2, header, robotID, eventToSend)
+                    self.manager.sendToGUI(data)
+                elif len(eventToSend) != 1:
+                    eventToSend = '+'.join(eventToSend).encode("utf-8")
+                    data = struct.pack(f"<IBB{len(eventToSend)}s", len(eventToSend) + 2, header, robotID, eventToSend)
                     self.manager.sendToGUI(data)
                 print(self.manager.detectedEvent)
                 if len(self.manager.detectedEvent) > 0:
