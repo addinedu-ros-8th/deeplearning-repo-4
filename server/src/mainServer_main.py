@@ -18,6 +18,5 @@ def main():
     espSocket.start()
     while True:
         pass
-    guiSocket.dbCon.close()
 if __name__ == "__main__":
     main()

@@ -5,6 +5,7 @@ from PyQt5.QtNetwork import QTcpSocket
 from PyQt5.QtCore import QDataStream, QIODevice
 import cv2
 import numpy as np
+import mysql.connector
 
 HOST = '192.168.0.180'  # ESP server IP
 PORT = 8080            # ESP server port
@@ -12,91 +13,65 @@ PORT = 8080            # ESP server port
 class TcpClient(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.initUI()
-        self.initSocket()
+        #self.setupUi(self)
+        self.local = mysql.connector.connect(
+            host = "192.168.0.180",
+            user = "root",
+            password="5315",
+            database='tfdb'
+        )
 
-    def initUI(self):
-        # UI 설정 (only cameraLabel)
-        self.setWindowTitle("ESP Camera Stream")
-        self.resize(640, 480)
+        self.checkSafety("절삭작업 위반", ["소화기", "불티산방지막"])
 
-        # Set up cameraLabel
-        self.cameraLabel = QLabel(self)
-        self.cameraLabel.setGeometry(0, 0, 640, 480)  # Adjust size as needed
-        self.cameraLabel.setScaledContents(True)      # Scale pixmap to label size
 
-    def initSocket(self):
-        # 소켓 초기화
-        self.socket = QTcpSocket(self)
-        self.socket.connected.connect(self.onConnected)
-        self.socket.readyRead.connect(self.readMessage)
-        self.socket.errorOccurred.connect(self.onError)
-
-        # Automatically connect to server on startup
-        self.connectToServer()
-
-    def connectToServer(self):
-        # 서버에 연결 (ESP server)
-        self.socket.connectToHost(HOST, PORT)
-        print(f"Connecting to {HOST}:{PORT}...")  # Debug output to console
-
-    def onConnected(self):
-        print("Connected to ESP server!")
-        # Send initial command (if required by your ESP server)
-
-    def readMessage(self):
-        # 서버로부터 이미지 데이터 수신
-        while self.socket.bytesAvailable() > 0:
-            # Assuming each frame is prefixed with a 4-byte length
-            if self.socket.bytesAvailable() >= 4:
-                data = self.socket.readAll()
-                totalSize = int.from_bytes(data[:4], "little")
-                
-                header = int.from_bytes(data[4], "little")
-                cmd = header >> 4
-                if cmd == 1:
-                    robotId = data[5]
-                    imgData = data[10:]
-                    img = np.frombuffer(imgData, np.uint8)
-                    img = cv2.imdecode(img, cv2.IMREAD_COLOR)
-                    self.displayImage(imgData)
-                    
-                        #return
-                # elif cmd == 3:
-                #     robotId = data[5]
-                #     event = data[4:]
-                #     if self.event_callback:
-                #         self.event_callback(event)
-            else:
-                # Not enough data for size; wait for more
-                return
-
-    def displayImage(self, frame_data):
-        # JPEG 데이터를 QPixmap으로 변환하여 cameraLabel에 표시
+    def convertIDtoName(self, table, id):
+        map = {
+            "EventType": ["TID", "typeName"],
+            "SafeCase": ["SID", "EID"],
+            "Equipment": ["EID", "equipName"],
+            "Accident": ["AID", "accidentName"],
+            "WorkPart": ["WID", "workName"]
+        }
         try:
-            # Decode JPEG data
-            img = cv2.imdecode(np.frombuffer(frame_data, np.uint8), cv2.IMREAD_COLOR)
-            if img is not None:
-                # Convert BGR to RGB for Qt
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                h, w, c = img.shape
-                qimage = QImage(img.data, w, h, w * c, QImage.Format_RGB888)
-                pixmap = QPixmap.fromImage(qimage)
-                self.cameraLabel.setPixmap(pixmap)
-            else:
-                print("Failed to decode image")
-        except Exception as e:
-            print(f"Image display error: {e}")
+            cur = self.local.cursor()
+            # Select 'name' column instead of the ID column
+            query = f"SELECT {map[table][1]} FROM {table} WHERE {map[table][0]} = {id}"
+            cur.execute(query)  # Use parameterized query
+            result = cur.fetchone()
+            return result[0] if result else "Unknown"  # Return name or "Unknown" if no match
+        
+        except mysql.connector.Error as e:
+            print(f"Error in convertIDtoName: {e}")
+            return None
+        
+        finally:
+            cur.close()
 
-    def onError(self):
-        # 에러 처리
-        error = self.socket.errorString()
-        print(f"Error occurred: {error}")
+    def checkSafety(self, typeName, red):  
+        cursor = self.local.cursor()
+        cursor.execute("SELECT * FROM SafeCase")
+        results = cursor.fetchall()
 
-    def closeEvent(self, event):
-        # Cleanup on window close
-        self.socket.disconnectFromHost()
-        event.accept()
+        
+        # Build the safe_case_map: EventType name -> list of Equipment names
+        safe_case_map = {}
+        for row in results:
+            sid, wid, eid = row  # Unpack (SID, WID, EID)
+            event_type_name = self.convertIDtoName("EventType", wid)
+            equipment_name = self.convertIDtoName("Equipment", eid)
+            if event_type_name not in safe_case_map:
+                safe_case_map[event_type_name] = []  # Initialize list for this event type
+            safe_case_map[event_type_name].append(equipment_name)  # Append equipment name
+        
+        print(safe_case_map)
+
+        # Check for typeName and update box_green with safe equipment
+        for key in safe_case_map:
+            if typeName == key:
+                # Find equipment not in the 'red' list (safe equipment)
+                safe_equipment = [eq for eq in safe_case_map[key] if eq not in red]
+                # Convert to string for setText
+                print(", ".join(safe_equipment) if safe_equipment else "All safe")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -22,7 +22,7 @@ import pyqtgraph as pg
 HOST = '192.168.0.180'
 PORT = 8080
 
-interface = uic.loadUiType("./interface.ui")[0]
+interface = uic.loadUiType("interface.ui")[0]
 
 
 ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -100,16 +100,22 @@ class ChartCreator:
         chart = QChart()
         chart.addSeries(series)
         chart.legend().setAlignment(Qt.AlignBottom)
+        chart.legend().setLabelBrush(QBrush(QColor("white")))
+        chart.setBackgroundBrush(QBrush(QColor(Qt.black)))
 
         # Configure axes
 
         axisX = QBarCategoryAxis()
         axisX.append([""])
         chart.setAxisX(axisX, series)
+        axisX.setLabelsColor(Qt.white)  # Set X-axis labels to white
+        axisX.setTitleBrush(QBrush(Qt.white))
        
 
         axisY = QValueAxis()
         chart.setAxisY(axisY, series)
+        axisY.setLabelsColor(Qt.white)  # Set Y-axis labels to white
+        axisY.setTitleBrush(QBrush(Qt.white))
 
         # Set up chart view and layout
         chart_view = QChartView(chart)
@@ -120,8 +126,8 @@ class ChartCreator:
         return chart
 
     def byEquip(self, page, data_dict, query_field, chart_widget):
-        bar_sets = [QBarSet(name) for name in data_dict.values()]
-        
+        series = QPieSeries()
+
         # Fetch data
         cur = self.local.cursor()
         ids = list(data_dict.keys())
@@ -136,40 +142,34 @@ class ChartCreator:
 
         cur.execute(query)
         results = cur.fetchall()
-        
+
         counts = {id: 0 for id in ids}
         for result in results:
             id, count = result
             counts[id] = count
 
-        # Fill bar sets with data
-        for bar_set, id in zip(bar_sets, ids):
-            bar_set.append(counts[id])
-
-        # Create and configure chart
-        series = QBarSeries()
-        for bar_set in bar_sets:
-            series.append(bar_set)
+        for id in ids:
+            name = data_dict[id]  
+            value = counts[id]    
+            if value > 0:        
+                slice_ = series.append(name, value) 
+                slice_.setLabelVisible(True)         
+                slice_.setLabel(f"{name}: {value}")  
+                label_font = QFont("Arial", 12) 
+                slice_.setLabelFont(label_font)
+                slice_.setLabelColor(Qt.white)
 
         chart = QChart()
         chart.addSeries(series)
-        chart.legend().setAlignment(Qt.AlignBottom)
+        chart.legend().hide() 
+        chart.setBackgroundBrush(QBrush(QColor(Qt.black)))
 
-
-        axisX = QBarCategoryAxis()
-        axisX.append([""])
-        chart.setAxisX(axisX, series)
-
-        axisY = QValueAxis()
-        chart.setAxisY(axisY, series)
-        
         chart_view = QChartView(chart)
         layout = QVBoxLayout(page)
         layout.addWidget(chart_view)
         chart_widget.setLayout(layout)
-        
-        return chart
 
+        return chart
 
     def statWorkPart(self):
         """Create work part statistics chart"""
@@ -207,10 +207,10 @@ class  Interface(QMainWindow, interface):
 
         #bonobono
         self.pixmap = QPixmap()
-        self.pixmap.load("./bono.png")
+        self.pixmap.load("./mini.png")
         self.pixmap = self.pixmap.scaled(QSize(300,200), Qt.KeepAspectRatioByExpanding)
         self.bono.setPixmap(self.pixmap)
-        self.bono.setAlignment(Qt.AlignCenter | Qt.AlignRight)
+        self.bono.setAlignment(Qt.AlignCenter) #Qt.AlignCenter | Qt.AlignRight
         
 
         #connect each button to stackedWidget page
@@ -219,12 +219,7 @@ class  Interface(QMainWindow, interface):
         self.btn3.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(2))
         self.btn4.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(3))
         self.btn5.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(4))
-        self.btn6.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(5))
-    
-        #panel box
-        self.box_gray.setStyleSheet("QLabel { border: 2px solid gray; background-color: #dedfdf;}")
-        self.box_red.setStyleSheet("QLabel { border: 2px solid red; background-color: #ff9999;}")
-        self.box_green.setStyleSheet("QLabel { border: 2px solid green; background-color: #85e085;}")
+        self.btn6.clicked.connect(lambda: self.stackedWidget.setCurrentIndex(5)) 
 
 
         #chart and graph
@@ -244,7 +239,6 @@ class  Interface(QMainWindow, interface):
 
 
     def initSocket(self):
-        # 소켓 초기화
         self.socket = QTcpSocket(self)
         self.socket.connected.connect(self.onConnected)
         self.socket.readyRead.connect(self.readMessage)
@@ -253,7 +247,7 @@ class  Interface(QMainWindow, interface):
     def connectToServer(self):
         # 서버에 연결 (ESP server)
         self.socket.connectToHost(HOST, PORT)
-        print(f"Connecting to {HOST}:{PORT}...")  # Debug output to console
+        print(f"Connecting to {HOST}:{PORT}...")
 
     def onConnected(self):
         print("Connected to ESP server!")
@@ -325,6 +319,7 @@ class  Interface(QMainWindow, interface):
 
 
 
+
     def statDaily(self):
         cur = self.local.cursor()
         query = """
@@ -336,40 +331,57 @@ class  Interface(QMainWindow, interface):
         cur.execute(query)
         results = cur.fetchall()
 
-        series = QLineSeries()
-        series.setName("Daily Reports")
+        db_data = {str(row[0]): row[1] for row in results}  # e.g., {"2025-03-01": 5, ...}
 
+        # Determine the date range (e.g., from earliest in DB to current date)
+        if results:
+            start_date = datetime.strptime(min(db_data.keys()), "%Y-%m-%d")
+            end_date = datetime.now()  # Or use max(db_data.keys()) for DB-only range
+        else:
+            start_date = datetime(2024, 1, 1)  # Fallback start date
+            end_date = datetime.now()  # Fallback end date
+
+        # Create series
+        series = QLineSeries()  
+        series.setName("Daily Reports")
         
-        for result in results:
-            violation_date, violation_count = result
-            # Convert the date to a QDateTime object
-            date = QDateTime.fromString(str(violation_date), "yyyy-MM-dd")
-            # QLineSeries expects x-axis as milliseconds since epoch
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            violation_count = db_data.get(date_str, 0)  # Default to 0 if date not in DB
+            date = QDateTime.fromString(date_str, "yyyy-MM-dd")
             x = date.toMSecsSinceEpoch()
             y = violation_count
             series.append(x, y)
-
-        # Create the chart and add the series
+            current_date += timedelta(days=1)
+        
         chart = QChart()
         chart.addSeries(series)
         chart.legend().hide()
+        
+        current_date = datetime.today().date()
+        march_21 = datetime(current_date.year, 3, 21).date()
+        diff = (current_date - march_21).days
 
-        # Configure the x-axis (dates)
         axisX = QDateTimeAxis()
-        axisX.setTickCount(8)  # Adjust based on your data range
-        axisX.setFormat("MM-dd")  # Date format for labels
+        axisX.setTickCount(diff) 
+        axisX.setFormat("MM-dd") 
         axisX.setTitleText("Date")
+        axisX.setLabelsColor(Qt.white)
+        axisX.setTitleBrush(QBrush(Qt.white))  # Set X-axis title to white
         chart.addAxis(axisX, Qt.AlignBottom)
         series.attachAxis(axisX)
-        
+        chart.setBackgroundBrush(QBrush(QColor(Qt.black)))
 
         axisY = QValueAxis()
         axisY.setLabelFormat("%i")  # Integer format for counts  
         axisY.setRange(0, max(y for _, y in results)) 
         chart.addAxis(axisY, Qt.AlignLeft)
         series.attachAxis(axisY)
+        axisY.setLabelsColor(Qt.white)  # Set Y-axis labels to white
+        axisY.setTitleBrush(QBrush(Qt.white))
 
-        series.setPen(QPen(QColor("#09DB7F"), 2))  # Blue line, 2px thick
+        series.setPen(QPen(QColor("#09DB7F"), 3))
         series.setPointsVisible(True)
 
         # Create the chart view and add it to page4
@@ -383,15 +395,24 @@ class  Interface(QMainWindow, interface):
 
 
 
+
     def safetyRule(self):
         self.rule1.setStyleSheet("QLabel { border: 2px solid #F88378; background-color: #F88378; color:black;}")
         self.rule2.setStyleSheet("QLabel { border: 2px solid #FBCEB1; background-color: #FBCEB1; color:black;}")
         self.rule3.setStyleSheet("QLabel { border: 2px solid #AFD9AE; background-color: #AFD9AE; color:black;}")
         self.rule4.setStyleSheet("QLabel { border: 2px solid #43B3AE; background-color: #43B3AE; color:black;}")
-        self.rule1.setText("기본작업: 안전모")
-        self.rule2.setText("용접작업: 용접가면, 소화기")
-        self.rule3.setText("절삭작업: 안전모, 소화기, 불티산방지막")
-        self.rule4.setText("사다리작업: 최상단 밑 작업, 사다리 적재물 위 미설치")
+        self.work1.setStyleSheet("QLabel { border: 2px solid #F88378; background-color: #F88378; color:black;}")
+        self.work2.setStyleSheet("QLabel { border: 2px solid #FBCEB1; background-color: #FBCEB1; color:black;}")
+        self.work3.setStyleSheet("QLabel { border: 2px solid #AFD9AE; background-color: #AFD9AE; color:black;}")
+        self.work4.setStyleSheet("QLabel { border: 2px solid #43B3AE; background-color: #43B3AE; color:black;}")
+        self.work1.setText("기본작업")
+        self.work2.setText("용접작업")
+        self.work3.setText("절삭작업")
+        self.work4.setText("사다리작업")
+        self.rule1.setText("안전모")
+        self.rule2.setText("용접가면, 소화기")
+        self.rule3.setText("안전모, 소화기, 불티산방지막")
+        self.rule4.setText("최상단 밑 작업, 사다리 적재물 위 미설치")
 
 
     
@@ -411,11 +432,14 @@ class  Interface(QMainWindow, interface):
             cur.execute(query)  # Use parameterized query
             result = cur.fetchone()
             return result[0] if result else "Unknown"  # Return name or "Unknown" if no match
+        
         except mysql.connector.Error as e:
             print(f"Error in convertIDtoName: {e}")
             return None
+        
         finally:
             cur.close()  
+    
     
     ''' update report log from database '''
     def showData(self):
@@ -443,32 +467,60 @@ class  Interface(QMainWindow, interface):
             self.table.setItem(rowIndex, 4, QTableWidgetItem(str(row[6])))  # Date
 
     
+    ''' update green panel '''
+    def checkSafety(self, typeName, red):  
+        cursor = self.local.cursor()
+        cursor.execute("SELECT * FROM SafeCase")
+        results = cursor.fetchall()
+
+        safe_case_map = {}
+        for row in results:
+            sid, wid, eid = row  # Unpack (SID, WID, EID)
+            event_type_name = self.convertIDtoName("EventType", wid)
+            equipment_name = self.convertIDtoName("Equipment", eid)
+            if event_type_name not in safe_case_map:
+                safe_case_map[event_type_name] = []  # Initialize list for this event type
+            safe_case_map[event_type_name].append(equipment_name)  # Append equipment name
+        
+        for key in safe_case_map:
+            if typeName == key:
+                safe_equipment = [eq for eq in safe_case_map[key] if eq not in red]
+                self.box_green.setText("\n".join(safe_equipment) if safe_equipment else "")
 
 
-    ''' update grey, geen, red warning pannel '''
+    ''' update grey, red warning pannel '''
     def updatePanel(self, event):
         DT = int.from_bytes(event[0], "little") & 0x0F
-        print(event[2:])
+        #print(event[2:])
         parts = bytes(event[2:].data()).decode().split('+')
-        parts = [part.strip() for part in parts]  # strip space
-
-        typeName, red = parts
+        print(parts)
+        parts = [part.strip() for part in parts]  # strip space ['work ', ' equip ', ' ' , ...]
+        print(parts)
         
+        typeName = parts[0]
+        red = parts[1:]
 
         if DT == 1:
             self.box_gray.setText(typeName)
-            self.box_red.setText(red)
-            if red == "쓰러짐" or red == "화재":
+            self.box_red.setText("\n".join(red))
+            self.checkSafety(typeName, red)
+            if red[0] == "쓰러짐" or red[0] == "화재":
                 msg = QMessageBox(self)
                 msg.setWindowTitle('Danger')
-                msg.setText(f'{red} 발생')
+                msg.setText(f'{red[0]} 발생')
                 msg.setIcon(QMessageBox.Warning)
                 msg.setStandardButtons(QMessageBox.Ok)
                 msg.setModal(False)  
                 msg.show()  
+            
+        if not parts:
+            self.box_red.setText("")
+            self.box_green.setText("")
+            self.box_gray.setText("All Clear :>")
+
         
         if DT == 0:
-            self.box_gray.setText("Well Done! All Clear :>")
+            self.box_gray.setText("No Accident!")
             self.box_green.setText("")
             self.box_red.setText("") 
      
@@ -478,6 +530,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     myWindows = Interface()
     myWindows.show()
-    
 
     sys.exit(app.exec_())

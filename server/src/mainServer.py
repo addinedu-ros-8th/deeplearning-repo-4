@@ -1,13 +1,13 @@
-import socket
 import threading
 import struct
-from Camera import Camera
 import cv2
 import numpy as np
 from socketHandler import SocketHandler
 from DbController import DbController
 from queue import Queue
-import time
+import time, datetime
+import socket
+import os
 
 class GUISocketHandler(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
@@ -24,29 +24,11 @@ class GUISocketHandler(SocketHandler):
             packetSize = int.from_bytes(data[:4], "little")
             header = data[4]
             cmd = header >> 4
-            if cmd == 0x00:
-                print("getStream")
-                robotID = data[5]
-                self.manager.sendToESP(data)
-                if header == 0x00:
-                    targetStatus = 0b00000100
-                elif header == 0x01:
-                    targetStatus = 0b00000000
-                    
-                self.manager.getStatus(robotID)
-                self.resend(self.manager.sendToESP, data, targetStatus, 5)
-                
-            elif cmd == 0x02:
+            
+            if cmd == 0x02:
                 print("setDriveMode")
                 self.robotID = data[5]
                 self.manager.sendToESP(data)
-                if header == 0x20:
-                    targetStatus = 0b00000000
-                elif header == 0x21:
-                    targetStatus = 0b00000010
-                    
-                self.manager.getStatus(robotID)
-                self.resend(self.manager.sendToESP, data, targetStatus, 5)
                 
             elif cmd == 0x04:
                 print("requestGrant")
@@ -68,37 +50,41 @@ class GUISocketHandler(SocketHandler):
         self.dbCon.myCursor.execute("DELETE FROM mysql.proxies_priv WHERE User='readonly_user';")
         self.dbCon.mydb.commit()
         self.dbCon.myCursor.execute("FLUSH PRIVILEGES;")
+        
+    def close(self):
+        self.dbCon.close()
             
 class ESPSocketHandler(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
         super().__init__(mode, host, port, type, manager)
         self.socketName = "ESP Socket"
         
-    def processData(self):
-        while True:
-            data = self.packetQueue.get()
-            if len(data) < 4:
-                continue
-            packetSize = int.from_bytes(data[:4], "little")
+    def listen(self):
+        self.server = socket.socket(socket.AF_INET, self.type)
+        self.server.bind((self.host, self.port))
+        self.server.listen(5)
+        print(f"{self.socketName} is connecting..")
+        self.client, self.addr = self.server.accept()
+        print(f"{self.socketName} is connected : {self.addr}")
+        
+    def send(self, data):
+        if self.client:
             header = data[4]
-            cmd = header >> 4
-            
-            if header == 0x51:
-                robotID = data[5]
-                _type = data[6]
-                status = data[7]
-                
-                if _type == 0x00:
-                    self.manager.robotStatus = status
-                elif _type == 0x01:
-                    self.manager.streamingStatus = status
+            if header == 0x20:
+                targetStatus = data[6]
+                self.client.settimeout(1)
+                self.client.send(data)
+                    
                
 class AIServerSocket(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="udp", manager=None):
         super().__init__(mode, host, port, type, manager)
         self.socketName = "AI Server Socket"
         self.frameQueue = Queue()
+        self.detectQueue = Queue()
         self.displayQueue = Queue()
+        self.initDbController()
+        
         threading.Thread(target=self.processFrames, daemon=True).start()
         #threading.Thread(target=self.displayFrame, daemon=True).start()
             
@@ -108,11 +94,12 @@ class AIServerSocket(SocketHandler):
             data = self.packetQueue.get()
             if len(data) < 4:
                 continue
+            
             packetSize = int.from_bytes(data[:4], "little")
             header = data[4]
             cmd = header >> 4 # check left half byte of header
             if cmd == 1: # sendSteam
-                robotId = data[5]
+                robotID = data[5]
                 chunks = data[6]
                 frameNum = int.from_bytes(data[7:9], "little")
                 chunkIdx = data[9]
@@ -127,28 +114,52 @@ class AIServerSocket(SocketHandler):
                     self.frameQueue.put(frame_data)
 
                 prevFrame = frameNum
-            elif cmd == 3: # detect
-                event = data[6:].decode("utf-8").split('+')[1]
-                if header == 0x30:
-                    print("POP")
-                    self.manager.detectedEvent.remove(event)
-                elif header == 0x31:
-                    print("ADD")
-                    self.manager.detectedEvent.add(event)
-                    
-                self.manager.sendToGUI(data)
-                if len(self.manager.detectedEvent) == 0:
-                    targetStatus = 0b00000010
-                elif "쓰러짐" in self.manager.detectedEvent or "사고" in self.manager.detectedEvent:
-                    targetStatus = 0b00010000
-                else:
-                    targetStatus = 0b00001000
-                data = struct.pack("<IBB", 2, 0x32, targetStatus)
-                
+            elif cmd == 2:
                 self.manager.sendToESP(data)
-                self.manager.getStatus(robotId)
-                self.manager.resend(self.manager.sendToESP, data, targetStatus)
+            elif cmd == 3: # detect
+                robotID = data[5]
+                event = data[6:]
+                parsedEvent = event.decode("utf-8").split('+')
+
+                if header == 0x30:
+                    if parsedEvent[0] == "사고":
+                        self.manager.detectedEvent.remove(parsedEvent[1])
+                elif header == 0x31:
+                    if parsedEvent[0] == "사고":
+                        self.manager.detectedEvent.add(parsedEvent[1])
+                    if not(len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == "감지"):
+                        self.detectQueue.put(parsedEvent)
+                eventToSend = parsedEvent.copy()
+                if "감지" in eventToSend:
+                    eventToSend.remove("감지")
+                print(eventToSend)
+                if len(eventToSend) > 1:
+                    print(eventToSend)
+                    eventToSend = '+'.join(eventToSend).encode("utf-8")
+                    data = struct.pack(f"<IBB{len(eventToSend)}s", len(eventToSend) + 2, header, robotID, eventToSend)
+                    self.manager.sendToGUI(data)
+                elif len(eventToSend) != 1:
+                    eventToSend = '+'.join(eventToSend).encode("utf-8")
+                    data = struct.pack(f"<IBB{len(eventToSend)}s", len(eventToSend) + 2, header, robotID, eventToSend)
+                    self.manager.sendToGUI(data)
+                print(self.manager.detectedEvent)
+                if len(self.manager.detectedEvent) > 0:
+                    if len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == "감지":
+                        targetStatus = 0b00000000 # Stop for detecting
+                        print("Stop for detecting")
+                    else:
+                        targetStatus = 0b00010000 # Accident, Stop
+                        print("Accident, Stop")
+                elif len(parsedEvent[0]) and parsedEvent[0] != "사고":
+                    targetStatus = 0b00001000 # Violation, Stop
+                    print("Violation, Stop")
+                else:
+                    targetStatus = 0b00000010 # Driving
+                    print("Driving")
                 
+                data = struct.pack("<IBBB", 3, 0x20, 1, targetStatus)
+                
+                threading.Thread(target=self.manager.sendToESP, args=(data,)).start()
                 
     def processFrames(self):
         start_time = time.time()
@@ -159,12 +170,16 @@ class AIServerSocket(SocketHandler):
             imgSize = len(frame_data)
             totalSize = imgSize + 10
             chunks = 0; frameNum = 0; i =0
-            
+  
             self.manager.sendToGUI(struct.pack(f"<IBBBHB{imgSize}s", totalSize, 0x10, 0x01, chunks, 
                                               frameNum, i, frame_data))
             
             frame_array = np.frombuffer(frame_data, dtype=np.uint8)
             frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+            
+            if not self.detectQueue.empty():
+                event = self.detectQueue.get()
+                self.capture(frame, event)
     
             frame_count += 1
             if time.time() - start_time >= 1:
@@ -180,14 +195,53 @@ class AIServerSocket(SocketHandler):
             frame = self.displayQueue.get()
             frame = cv2.resize(frame, (640, 480))
             cv2.imshow("Stream", frame)
-            cv2.waitKey(1)
+            cv2.waitKey(30)
             self.displayQueue.task_done()
             
+    def initDbController(self):
+        self.dbCon = DbController("localhost", "root", "5315", "tfdb")
+        self.dbCon.connect()
+        self.dbCon.setCursor(True)
+            
+    def capture(self, frame, event):
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{event[0]}_{timestamp}.jpg"
+        dirpath = "../images"
+        filepath = os.path.join(dirpath, filename)
+        cv2.imwrite(filepath, frame)
+        if event[0] == '' or "감지":
+            return
+        _type = event[0]
+        tid = self.dbCon.getData(f"select tid from EventType where typeName = '{_type}'")[0][0]
+
+        eventList = event[1:]
+        if tid != 5:
+            for each in eventList:
+                aid = 3
+                eid = self.dbCon.getData(f"select eid from Equipment where equipName = '{each}'")[0][0]
+                sid = self.dbCon.getData(f"select sid from SafeCase where eid = '{eid}'")[0][0]
+                print("event:", each)
+                print("SID", sid)
+                values = (1, tid, sid, aid, filepath)
+                sql = "insert into Report (RID, TID, SID, AID, imgPath) values (%s, %s, %s, %s, %s)"
+                self.dbCon.myCursor.execute(sql, values)
+        else:
+            for each in eventList:
+                aid = self.dbCon.getData(f"select aid from Accident where accidentName = '{each}'")[0][0]
+                values = (1, tid, aid, filepath)
+                sql = "insert into Report (RID, TID, AID, imgPath) values (%s, %s, %s, %s)"
+                self.dbCon.myCursor.execute(sql, values)
+        self.dbCon.mydb.commit()
+        
+    def close(self):
+        self.dbCon.mydb.close()
+                    
 class SocketManager:
     def __init__(self):
         self.guiHandler = None
         self.espHandler = None
         self.aiHanlder = None
+
         self.detectedEvent = set()
         self.robotStatus = 0b00000000
         
@@ -204,24 +258,11 @@ class SocketManager:
         if self.guiHandler:
             self.guiHandler.send(data)
             
-    def sendToAIServer(self, data, server=None):
+    def sendToAIServer(self, data):
         if self.aiHanlder:
-            self.guiHandler.send(data)  
+            self.aiHandler.send(data)  
             
     def getStatus(self, robotID):
         header = 0x50
         self.sendToESP(struct.pack("<IBB", 2, header, robotID))
         
-    def resend(self, command, data, targetStatus, maxAttempts= 5):
-        attempts = [0]
-        def checkAndResend():
-            
-            comparedStatus = self.robotStatus & targetStatus
-            if attempts[0] >= maxAttempts or comparedStatus == targetStatus:
-                return
-            else:
-                attempts[0] += 1
-                command(data)
-                threading.Timer(1, checkAndResend).start()
-                
-        checkAndResend()
