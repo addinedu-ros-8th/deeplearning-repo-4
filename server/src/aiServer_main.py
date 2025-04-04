@@ -5,7 +5,7 @@ import cv2
 mainServerIp = "192.168.0.180"
 mainServerPort = 8082
 host = "192.168.0.180"
-espPort = 8081
+espPort = 8083
 
 def main():
     manager = SocketManager()
