@@ -65,6 +65,7 @@ class SocketHandler:
                     time.sleep(1)
                     if self.type == socket.SOCK_STREAM:
                         self.client.close()
+                    self.close()
                     break
         
     def send(self, data):
@@ -76,3 +77,6 @@ class SocketHandler:
                     self.client.sendto(data, (self.host, self.port))
         except Exception as e:
             pass
+        
+    def close():
+        pass # close what it need for safety

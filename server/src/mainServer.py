@@ -5,8 +5,9 @@ import numpy as np
 from socketHandler import SocketHandler
 from DbController import DbController
 from queue import Queue
-import time
+import time, datetime
 import socket
+import os
 
 class GUISocketHandler(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
@@ -49,6 +50,9 @@ class GUISocketHandler(SocketHandler):
         self.dbCon.myCursor.execute("DELETE FROM mysql.proxies_priv WHERE User='readonly_user';")
         self.dbCon.mydb.commit()
         self.dbCon.myCursor.execute("FLUSH PRIVILEGES;")
+        
+    def close(self):
+        self.dbCon.close()
             
 class ESPSocketHandler(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
@@ -64,8 +68,6 @@ class ESPSocketHandler(SocketHandler):
         print(f"{self.socketName} is connected : {self.addr}")
         
     def send(self, data):
-        maxRetry = 5
-        retry = 0
         if self.client:
             header = data[4]
             if header == 0x20:
@@ -79,13 +81,15 @@ class AIServerSocket(SocketHandler):
         super().__init__(mode, host, port, type, manager)
         self.socketName = "AI Server Socket"
         self.frameQueue = Queue()
+        self.detectQueue = Queue()
         self.displayQueue = Queue()
+        self.initDbController()
+        
         threading.Thread(target=self.processFrames, daemon=True).start()
         #threading.Thread(target=self.displayFrame, daemon=True).start()
             
     def processData(self):
         prevFrame = -1
-        
         while True:
             data = self.packetQueue.get()
             if len(data) < 4:
@@ -123,9 +127,15 @@ class AIServerSocket(SocketHandler):
                 elif header == 0x31:
                     if parsedEvent[0] == "사고":
                         self.manager.detectedEvent.add(parsedEvent[1])
-                
-                data = struct.pack(f"<IBB{len(event)}s", len(event) + 2, header, robotID, event)
-                self.manager.sendToGUI(data)
+                    if not(len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == "감지"):
+                        self.detectQueue.put(parsedEvent)
+                eventToSend = parsedEvent.copy()
+                if "감지" in eventToSend:
+                    eventToSend.remove("감지")
+                if len(eventToSend) > 1:
+                    eventToSend = '+'.join(eventToSend).encode("utf-8")
+                    data = struct.pack(f"<IBB{len(event)}s", len(event) + 2, header, robotID, eventToSend)
+                    self.manager.sendToGUI(data)
                 print(self.manager.detectedEvent)
                 if len(self.manager.detectedEvent) > 0:
                     if len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == "감지":
@@ -134,13 +144,12 @@ class AIServerSocket(SocketHandler):
                     else:
                         targetStatus = 0b00010000 # Accident, Stop
                         print("Accident, Stop")
-                elif len(event) > 0:
+                elif len(parsedEvent[0]) and parsedEvent[0] != "사고":
                     targetStatus = 0b00001000 # Violation, Stop
                     print("Violation, Stop")
                 else:
                     targetStatus = 0b00000010 # Driving
                     print("Driving")
-                
                 
                 data = struct.pack("<IBBB", 3, 0x20, 1, targetStatus)
                 
@@ -161,6 +170,10 @@ class AIServerSocket(SocketHandler):
             
             frame_array = np.frombuffer(frame_data, dtype=np.uint8)
             frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+            
+            if not self.detectQueue.empty():
+                event = self.detectQueue.get()
+                self.capture(frame, event)
     
             frame_count += 1
             if time.time() - start_time >= 1:
@@ -179,11 +192,50 @@ class AIServerSocket(SocketHandler):
             cv2.waitKey(30)
             self.displayQueue.task_done()
             
+    def initDbController(self):
+        self.dbCon = DbController("localhost", "root", "5315", "tfdb")
+        self.dbCon.connect()
+        self.dbCon.setCursor(True)
+            
+    def capture(self, frame, event):
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{event[0]}_{timestamp}.jpg"
+        dirpath = "../images"
+        filepath = os.path.join(dirpath, filename)
+        cv2.imwrite(filepath, frame)
+        if event[0] == '' or "감지":
+            return
+        _type = event[0]
+        tid = self.dbCon.getData(f"select tid from EventType where typeName = '{_type}'")[0][0]
+
+        eventList = event[1:]
+        if tid != 5:
+            for each in eventList:
+                aid = 3
+                eid = self.dbCon.getData(f"select eid from Equipment where equipName = '{each}'")[0][0]
+                sid = self.dbCon.getData(f"select sid from SafeCase where eid = '{eid}'")[0][0]
+                print("event:", each)
+                print("SID", sid)
+                values = (1, tid, sid, aid, filepath)
+                sql = "insert into Report (RID, TID, SID, AID, imgPath) values (%s, %s, %s, %s, %s)"
+                self.dbCon.myCursor.execute(sql, values)
+        else:
+            for each in eventList:
+                aid = self.dbCon.getData(f"select aid from Accident where accidentName = '{each}'")[0][0]
+                values = (1, tid, aid, filepath)
+                sql = "insert into Report (RID, TID, AID, imgPath) values (%s, %s, %s, %s)"
+                self.dbCon.myCursor.execute(sql, values)
+        self.dbCon.mydb.commit()
+        
+    def close(self):
+        self.dbCon.mydb.close()
+                    
 class SocketManager:
     def __init__(self):
         self.guiHandler = None
         self.espHandler = None
         self.aiHanlder = None
+
         self.detectedEvent = set()
         self.robotStatus = 0b00000000
         
@@ -200,7 +252,7 @@ class SocketManager:
         if self.guiHandler:
             self.guiHandler.send(data)
             
-    def sendToAIServer(self, data, server=None):
+    def sendToAIServer(self, data):
         if self.aiHanlder:
             self.aiHandler.send(data)  
             

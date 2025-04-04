@@ -2,15 +2,17 @@ from ultralytics import YOLO
 import mediapipe as mp
 import numpy as np
 import cv2
+import torch
 
 class WorkDetector:
     def __init__(self):
         self.mpPose = mp.solutions.pose
         self.pose = self.mpPose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         self.mpDrawing = mp.solutions.drawing_utils
-        self.fireDetection = YOLO("fire_detection.pt").to("cuda")
-        self.workModel = YOLO("../../deep_learning/data/weights/seven_class_segmentation.pt").to("cuda")
-        self.helmetModel = YOLO("../../deep_learning/data/weights/last_helmet_detection.pt").to("cuda")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.fireDetection = YOLO("fire_detection.pt").to(device)
+        self.workModel = YOLO("../../deep_learning/data/weights/seven_class_segmentation.pt").to(device)
+        self.helmetModel = YOLO("../../deep_learning/data/weights/last_helmet_detection.pt").to(device)
         
     def isHelmetDetected(self, helmetResults):
         if len(helmetResults[0].boxes) > 0:
@@ -85,8 +87,11 @@ class WorkDetector:
     def isLadderDetected(self, detectedClasses):
         return "WO-03" in detectedClasses
     
-    def isWeldingDetected(self, detectedClasses):
-        return "SO-24" in detectedClasses
+    def isWeldingDetected(self, masks, detectedClasses, width):
+        if "SO-24" not in detectedClasses:
+            return False
+        x,y, w, _ = self.getBox(masks, detectedClasses, "SO-24")
+        return self.isCenter(width, x + w//2)
     
     def isFireExtinguisherDetected(self, detectedClasses):
         return "SO-40" in detectedClasses
@@ -94,8 +99,11 @@ class WorkDetector:
     def isWeldingmaskDetected(self, detectedClasses):
         return "WO-23" in detectedClasses
     
-    def isCuttingDetected(self, detectedClasses):
-        return "SO-28" in detectedClasses
+    def isCuttingDetected(self, masks, detectedClasses, width):
+        if "SO-28" not in detectedClasses:
+            return False
+        x, y, w, _ = self.getBox(masks, detectedClasses, "SO-28")
+        return self.isCenter(width, x + w//2)
     
     def isSparkDepenseDetected(self, detectedClasses):
         return "SO-20" in detectedClasses
@@ -110,3 +118,15 @@ class WorkDetector:
                 isLadderViolation = True
                 break
         return isLadderViolation
+    
+    def getBox(self, masks, detectedClasses, name):
+        idx = detectedClasses.index(name)
+        polygon = np.array(masks[idx], np.int32)
+        return cv2.boundingRect(polygon)
+    
+    def isCenter(self, width, x):
+        ratio = 0.1
+        boundary = (width // 2 - width * 0.1, width // 2 + width * 0.1)
+        return x >= boundary[0] and x <= boundary[1]
+    
+        
