@@ -43,6 +43,14 @@
 	background-color: #CEEDE9;
 	color: black;
 }
+#frame_28 QPushButton{
+	background-color: #CEEDE9;
+	color: black;
+}
+#frame_28 QPushButton:hover{
+	background-color: #95D8CF;
+	color: black;
+}
 #frame_20 QLabel{
 	color: black;
 }
@@ -243,7 +251,7 @@
              </font>
             </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>5</number>
             </property>
             <widget class="QWidget" name="page">
              <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -467,7 +475,7 @@
                               </widget>
                              </item>
                              <item>
-                              <widget class="QLabel" name="label_3">
+                              <widget class="QLabel" name="box_green">
                                <property name="sizePolicy">
                                 <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                                  <horstretch>0</horstretch>
@@ -522,7 +530,7 @@
                               </widget>
                              </item>
                              <item>
-                              <widget class="QLabel" name="label_8">
+                              <widget class="QLabel" name="box_red">
                                <property name="sizePolicy">
                                 <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                                  <horstretch>0</horstretch>

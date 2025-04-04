@@ -440,6 +440,7 @@ class  Interface(QMainWindow, interface):
         finally:
             cur.close()  
     
+    
     ''' update report log from database '''
     def showData(self):
         self.table.setRowCount(0)
@@ -484,7 +485,7 @@ class  Interface(QMainWindow, interface):
         for key in safe_case_map:
             if typeName == key:
                 safe_equipment = [eq for eq in safe_case_map[key] if eq not in red]
-                self.box_green.setText(", ".join(safe_equipment) if safe_equipment else "")
+                self.box_green.setText("\n".join(safe_equipment) if safe_equipment else "")
 
 
     ''' update grey, red warning pannel '''
@@ -492,6 +493,7 @@ class  Interface(QMainWindow, interface):
         DT = int.from_bytes(event[0], "little") & 0x0F
         #print(event[2:])
         parts = bytes(event[2:].data()).decode().split('+')
+        print(parts)
         parts = [part.strip() for part in parts]  # strip space ['work ', ' equip ', ' ' , ...]
         print(parts)
         
@@ -500,7 +502,7 @@ class  Interface(QMainWindow, interface):
 
         if DT == 1:
             self.box_gray.setText(typeName)
-            self.box_red.setText(str(red))
+            self.box_red.setText("\n".join(red))
             self.checkSafety(typeName, red)
             if red[0] == "쓰러짐" or red[0] == "화재":
                 msg = QMessageBox(self)
@@ -512,7 +514,7 @@ class  Interface(QMainWindow, interface):
                 msg.show()  
         
         if DT == 0:
-            self.box_gray.setText("Well Done! All Clear :>")
+            self.box_gray.setText("Nothing Update :>")
             self.box_green.setText("")
             self.box_red.setText("") 
      
@@ -522,6 +524,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     myWindows = Interface()
     myWindows.show()
-    
 
     sys.exit(app.exec_())
