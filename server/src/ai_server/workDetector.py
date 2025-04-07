@@ -3,6 +3,8 @@ import mediapipe as mp
 import numpy as np
 import cv2
 import torch
+import os
+from config.setting import *
 
 class WorkDetector:
     def __init__(self):
@@ -10,14 +12,16 @@ class WorkDetector:
         self.pose = self.mpPose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         self.mpDrawing = mp.solutions.drawing_utils
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.fireDetection = YOLO("fire_detection.pt").to(device)
+        baseDir = os.path.dirname(__file__)
+        modelPath = os.path.join(baseDir, "fire_detection.pt")
+        self.fireDetection = YOLO(modelPath).to(device)
         self.workModel = YOLO("../../deep_learning/data/weights/seven_class_segmentation.pt").to(device)
         self.helmetModel = YOLO("../../deep_learning/data/weights/last_helmet_detection.pt").to(device)
         
     def isHelmetDetected(self, helmetResults):
         if len(helmetResults[0].boxes) > 0:
             names = [helmetResults[0].names[cls.item()] for cls in helmetResults[0].boxes.cls.int()]
-            if "helmet" in names:
+            if Label.헬멧 in names:
                 return True
         else:
             return False
@@ -76,37 +80,37 @@ class WorkDetector:
     def getWorkerMasks(self, workResults):
         masks = workResults[0].masks.xy
         detectedClasses = self.getDetectedClasses(workResults)
-        return [masks[i] for i, cls in enumerate(detectedClasses) if cls == "WO-01"]
+        return [masks[i] for i, cls in enumerate(detectedClasses) if cls == Label.작업자]
     
     def getMasks(self, workResults):
         return workResults[0].masks.xy
     
     def isWorkerDetected(self, detectedClasses):
-        return "WO-01" in detectedClasses
+        return Label.작업자 in detectedClasses
     
     def isLadderDetected(self, detectedClasses):
-        return "WO-03" in detectedClasses
+        return Label.사다리 in detectedClasses
     
     def isWeldingDetected(self, masks, detectedClasses, width):
-        if "SO-24" not in detectedClasses:
+        if Label.용접기 not in detectedClasses:
             return False
-        x,y, w, _ = self.getBox(masks, detectedClasses, "SO-24")
+        x,y, w, _ = self.getBox(masks, detectedClasses, Label.용접기)
         return self.isCenter(width, x + w//2)
     
     def isFireExtinguisherDetected(self, detectedClasses):
-        return "SO-40" in detectedClasses
+        return Label.소화기 in detectedClasses
     
     def isWeldingmaskDetected(self, detectedClasses):
-        return "WO-23" in detectedClasses
+        return Label.용접가면 in detectedClasses
     
     def isCuttingDetected(self, masks, detectedClasses, width):
-        if "SO-28" not in detectedClasses:
+        if Label.원형톱 not in detectedClasses:
             return False
-        x, y, w, _ = self.getBox(masks, detectedClasses, "SO-28")
+        x, y, w, _ = self.getBox(masks, detectedClasses, Label.원형톱)
         return self.isCenter(width, x + w//2)
     
     def isSparkDepenseDetected(self, detectedClasses):
-        return "SO-20" in detectedClasses
+        return Label.불티산방지막 in detectedClasses
     
     def isLadderWorkViolation(self, ladderPolygon, workerMasks):
         _, ladderY, _, ladderH = cv2.boundingRect(ladderPolygon)

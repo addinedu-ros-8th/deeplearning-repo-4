@@ -1,18 +1,12 @@
-from aiServer import *
-import threading
-import cv2
-
-mainServerIp = "192.168.0.180"
-mainServerPort = 8082
-host = "192.168.0.180"
-espPort = 8083
+from ai_server import *
+from config.setting import *
 
 def main():
     manager = SocketManager()
-    espSocket = ESPSocketHandler("server", host, espPort, "udp", manager)
-    mainServerSocket = MainServerSocketHandler("client", host, mainServerPort, "udp", manager)
-    manager.setHandlers(mainServerSocket, espSocket)
-    espSocket.start()
+    visionSocket = VisionSocketHandler("server", SocketIP.AI_SERVER_IP, SocketPort.AI_VISION_PORT, "udp", manager)
+    mainServerSocket = MainServerSocketHandler("client", SocketIP.MAIN_SERVER_IP, SocketPort.MAIN_AI_PORT, "udp", manager)
+    manager.setHandlers(mainServerSocket, visionSocket)
+    visionSocket.start()
     mainServerSocket.start()
 
     while True:

@@ -34,26 +34,4 @@ class DbController:
         if self.myCursor:
             self.myCursor.execute(query)
             return self.myCursor.fetchall()
-        
-def main():
-    dbCon = DbController("localhost", "root", "5315", "mysql")
-    dbCon.connect()
-    dbCon.setCursor(True)
-    
-    dbCon.myCursor.execute("DELETE FROM mysql.db WHERE User='readonly_user';")
-    dbCon.mydb.commit()
-    dbCon.myCursor.execute("DELETE FROM mysql.user WHERE User='readonly_user';")
-    dbCon.mydb.commit()
-    dbCon.myCursor.execute("DELETE FROM mysql.proxies_priv WHERE User='readonly_user';")
-    dbCon.mydb.commit()
-    dbCon.myCursor.execute("FLUSH PRIVILEGES;")
-    dbCon.myCursor.execute(f"Create user 'readonly_user'@'192.168.0.153' identified by '0000'")
-    dbCon.mydb.commit()
-    dbCon.myCursor.execute(f"GRANT SELECT ON tfdb.* TO 'readonly_user'@'192.168.0.147';")
-    dbCon.mydb.commit()
-    dbCon.myCursor.execute("FLUSH PRIVILEGES;")
-    dbCon.close()
-    
-if __name__ == "__main__":
-    main()
     

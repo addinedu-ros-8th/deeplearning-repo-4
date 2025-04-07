@@ -2,12 +2,13 @@ import threading
 import struct
 import cv2
 import numpy as np
-from socketHandler import SocketHandler
-from DbController import DbController
+from common.socketHandler import SocketHandler
+from .DbController import DbController
 from queue import Queue
 import time, datetime
 import socket
 import os
+from config.setting import *
 
 class GUISocketHandler(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
@@ -28,7 +29,7 @@ class GUISocketHandler(SocketHandler):
             if cmd == 0x02:
                 print("setDriveMode")
                 self.robotID = data[5]
-                self.manager.sendToESP(data)
+                self.manager.sendToVision(data)
                 
             elif cmd == 0x04:
                 print("requestGrant")
@@ -54,10 +55,10 @@ class GUISocketHandler(SocketHandler):
     def close(self):
         self.dbCon.close()
             
-class ESPSocketHandler(SocketHandler):
+class VisionSocketHandler(SocketHandler):
     def __init__(self, mode="server", host="0.0.0.0", port=0, type="tcp", manager=None):
         super().__init__(mode, host, port, type, manager)
-        self.socketName = "ESP Socket"
+        self.socketName = "Vision Socket"
         
     def listen(self):
         self.server = socket.socket(socket.AF_INET, self.type)
@@ -115,23 +116,23 @@ class AIServerSocket(SocketHandler):
 
                 prevFrame = frameNum
             elif cmd == 2:
-                self.manager.sendToESP(data)
+                self.manager.sendToVision(data)
             elif cmd == 3: # detect
                 robotID = data[5]
                 event = data[6:]
                 parsedEvent = event.decode("utf-8").split('+')
 
                 if header == 0x30:
-                    if parsedEvent[0] == "사고":
+                    if parsedEvent[0] == EventType.사고:
                         self.manager.detectedEvent.remove(parsedEvent[1])
                 elif header == 0x31:
-                    if parsedEvent[0] == "사고":
+                    if parsedEvent[0] == EventType.사고:
                         self.manager.detectedEvent.add(parsedEvent[1])
-                    if not(len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == "감지"):
+                    if not(len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == Accident.감지):
                         self.detectQueue.put(parsedEvent)
                 eventToSend = parsedEvent.copy()
-                if "감지" in eventToSend:
-                    eventToSend.remove("감지")
+                if Accident.감지 in eventToSend:
+                    eventToSend.remove(Accident.감지)
                 print(eventToSend)
                 if len(eventToSend) > 1:
                     print(eventToSend)
@@ -143,23 +144,26 @@ class AIServerSocket(SocketHandler):
                     data = struct.pack(f"<IBB{len(eventToSend)}s", len(eventToSend) + 2, header, robotID, eventToSend)
                     self.manager.sendToGUI(data)
                 print(self.manager.detectedEvent)
+                
+                status = self.manager.robotStatus
                 if len(self.manager.detectedEvent) > 0:
-                    if len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == "감지":
-                        targetStatus = 0b00000000 # Stop for detecting
+                    if len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == Accident.감지:
+                        targetStatus = self.manager.setBuzzer(status, 0) # Stop for detecting
                         print("Stop for detecting")
                     else:
-                        targetStatus = 0b00010000 # Accident, Stop
+                        targetStatus = self.manager.setBuzzer(status, 2) # Accident, Stop
                         print("Accident, Stop")
-                elif len(parsedEvent[0]) and parsedEvent[0] != "사고":
-                    targetStatus = 0b00001000 # Violation, Stop
+                elif len(parsedEvent[0]) and parsedEvent[0] != EventType.사고:
+                    targetStatus = self.manager.setBuzzer(status, 1) # Violation, Stop
                     print("Violation, Stop")
                 else:
-                    targetStatus = 0b00000010 # Driving
+                    targetStatus = self.manager.setBuzzer(status, 0) # Driving
+                    targetStatus = self.manager.setDriveMode(targetStatus, 1)
                     print("Driving")
                 
-                data = struct.pack("<IBBB", 3, 0x20, 1, targetStatus)
+                data = struct.pack("<IBBB", 3, Command.SET_STATUS, RobotID.ROBOT1, targetStatus)
                 
-                threading.Thread(target=self.manager.sendToESP, args=(data,)).start()
+                threading.Thread(target=self.manager.sendToVision, args=(data,)).start()
                 
     def processFrames(self):
         start_time = time.time()
@@ -171,7 +175,7 @@ class AIServerSocket(SocketHandler):
             totalSize = imgSize + 10
             chunks = 0; frameNum = 0; i =0
   
-            self.manager.sendToGUI(struct.pack(f"<IBBBHB{imgSize}s", totalSize, 0x10, 0x01, chunks, 
+            self.manager.sendToGUI(struct.pack(f"<IBBBHB{imgSize}s", totalSize, Command.SEND_STREAM, RobotID.ROBOT1, chunks, 
                                               frameNum, i, frame_data))
             
             frame_array = np.frombuffer(frame_data, dtype=np.uint8)
@@ -209,7 +213,7 @@ class AIServerSocket(SocketHandler):
         dirpath = "../images"
         filepath = os.path.join(dirpath, filename)
         cv2.imwrite(filepath, frame)
-        if event[0] == '' or "감지":
+        if event[0] == '' or Accident.감지:
             return
         _type = event[0]
         tid = self.dbCon.getData(f"select tid from EventType where typeName = '{_type}'")[0][0]
@@ -239,20 +243,20 @@ class AIServerSocket(SocketHandler):
 class SocketManager:
     def __init__(self):
         self.guiHandler = None
-        self.espHandler = None
+        self.visionHandler = None
         self.aiHanlder = None
 
         self.detectedEvent = set()
         self.robotStatus = 0b00000000
         
-    def setHandlers(self, guiHandler, espHandler, aiHandler):
+    def setHandlers(self, guiHandler, visionHandler, aiHandler):
         self.guiHandler = guiHandler
-        self.espHandler = espHandler
+        self.visionHandler = visionHandler
         self.aiHanlder = aiHandler
         
-    def sendToESP(self, data):
-        if self.espHandler:
-            self.espHandler.send(data)
+    def sendToVision(self, data):
+        if self.visionHandler:
+            self.visionHandler.send(data)
 
     def sendToGUI(self, data):
         if self.guiHandler:
@@ -263,6 +267,24 @@ class SocketManager:
             self.aiHandler.send(data)  
             
     def getStatus(self, robotID):
-        header = 0x50
-        self.sendToESP(struct.pack("<IBB", 2, header, robotID))
+        self.sendToVision(struct.pack("<IBB", 2, Command.GET_STATUS, robotID))
         
+    def updateStatus(self, currentStatus, setBits, bitMask):
+        currentStatus &= ~bitMask
+        currentStatus |= (setBits & bitMask)
+        return currentStatus
+        
+    def setDriveMode(self, status, isDriving):
+        return self.updateStatus(status, Status.DRIVE_MODE if isDriving else 0, Status.DRIVE_MODE)
+    
+    def setCamera(self, status, isStreaming):
+        return self.updateStatus(status, Status.CAMERA if isStreaming else 0, Status.CAMERA)
+    
+    def setBuzzer(self, status, buzzerState):
+        # buzzerState : 0 (off), 1 (long), 2 (repeat)
+
+        status = self.updateStatus(status, buzzerState << Status.BUZZER_SHIFT, Status.BUZZER_MASK)
+        
+        status = self.updateStatus(status, 0, Status.DRIVE_MODE)
+        
+        return status
