@@ -20,17 +20,22 @@ def main():
     #ser = serial.Serial("/dev/ttyACM0", 115200, timeout=2)
     threading.Thread(target=aiSocket.streaming, daemon=True).start()
     robotStatus = 0b00000000 # bit 5, 4
+    robotLock = threading.Lock()
     time.sleep(2)
     
     led = LED(23)
     delay = 1
     def blink():
         while True:
-            if (robotStatus >> 3) & 0b11 != 0:
+            with robotLock:
+                status = robotStatus
+            if (status >> 3) & 0b11 != 0:
                 led.on()
                 time.sleep(delay)
                 led.off()
                 time.sleep(delay)
+            else:
+                time.sleep(0.2)
     threading.Thread(target=blink, daemon=True).start()
     while True:
         try:
@@ -60,7 +65,8 @@ def main():
                     print("Robot Status: ", drivingStatus)
                     print("Situdation: ", buzzerStatus)
                     
-                    robotStatus = targetStatus
+                    with robotLock:
+                        robotStatus = targetStatus
                     # ser.write(struct.pack("<IBBB", 3, 0x20, 1, targetStatus))
                     # receivedData = ser.readall()
                     # if len(receivedData) >= 4 and receivedData[4] == 0x51:
