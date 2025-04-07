@@ -512,9 +512,15 @@ class  Interface(QMainWindow, interface):
                 msg.setStandardButtons(QMessageBox.Ok)
                 msg.setModal(False)  
                 msg.show()  
+            
+        if not parts:
+            self.box_red.setText("")
+            self.box_green.setText("")
+            self.box_gray.setText("All Clear :>")
+
         
         if DT == 0:
-            self.box_gray.setText("Nothing Update :>")
+            self.box_gray.setText("No Accident!")
             self.box_green.setText("")
             self.box_red.setText("") 
      
