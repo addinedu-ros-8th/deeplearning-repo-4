@@ -3,6 +3,7 @@ import struct
 import cv2
 import numpy as np
 from common.socketHandler import SocketHandler
+import queue
 from queue import Queue
 import time
 from .workDetector import WorkDetector
@@ -54,7 +55,8 @@ class SocketManager:
                 print(durationTime)
                 if durationTime >= 5:
                     self.accident[Accident.쓰러짐] = self.accident.get(Accident.쓰러짐, 0) + 1
-            self.accident[Accident.감지] = self.accident.get(Accident.감지, 0) + 1
+                 
+                self.accident[Accident.감지] = self.accident.get(Accident.감지, 0) + 1
         else:
             self.fallenDetectedTime = None
         
@@ -67,7 +69,8 @@ class SocketManager:
                 print(durationTime)
                 if durationTime >= 2:
                     self.accident[Accident.화재] = self.accident.get(Accident.화재, 0) + 1
-            self.accident[Accident.감지] = self.accident.get(Accident.감지, 0) + 1
+                
+                self.accident[Accident.감지] = self.accident.get(Accident.감지, 0) + 1
             for box in fireResults[0].boxes:
                 xyxy = box.xyxy
                 cv2.rectangle(newImg, (int(xyxy[0][0]), int(xyxy[0][1])), (int(xyxy[0][2]), int(xyxy[0][3])), (0, 0, 255), 2)
@@ -163,8 +166,6 @@ class SocketManager:
         if self.idx == self.frameChunkSize - 1:
             event = {type: [each for each, number in value.items() if number > self.frameChunkSize // 2] for type, value in self.event.items()}
             accident = {type for type in self.accident.keys()}
-            if len(accident) > 1:
-                accident.remove(Accident.감지)
             event = {type: violations for type, violations in event.items() if violations}
             self.event.clear()
             self.accident.clear()       
@@ -254,6 +255,11 @@ class VisionSocketHandler(SocketHandler):
                 frame_data = b''.join(chunkBuffer[i] for i in sorted(chunkBuffer.keys()))
                 frame_array = np.frombuffer(frame_data, dtype=np.uint8)
                 frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+                try:
+                    if self.frameQueue.full():
+                        self.frameQueue.get_nowait()
+                except queue.Empty:
+                    pass
                 if frameNum % 2 == 0:
                     self.frameQueue.put(frame_data)
 

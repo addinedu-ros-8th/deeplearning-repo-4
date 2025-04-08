@@ -8,7 +8,6 @@ def main():
     manager.setHandlers(mainServerSocket, visionSocket)
     visionSocket.start()
     mainServerSocket.start()
-
     while True:
         manager.displayFrame()
 if __name__ == "__main__":
