@@ -121,29 +121,27 @@ class AIServerSocket(SocketHandler):
                 robotID = data[5]
                 event = data[6:]
                 parsedEvent = event.decode("utf-8").split('+')
-
+                
                 if header == 0x30:
                     if parsedEvent[0] == EventType.사고:
                         self.manager.detectedEvent.remove(parsedEvent[1])
+                    print("0x30", parsedEvent)
                 elif header == 0x31:
                     if parsedEvent[0] == EventType.사고:
                         self.manager.detectedEvent.add(parsedEvent[1])
-                    if not(len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == Accident.감지):
-                        self.detectQueue.put(parsedEvent)
+                    #if not(len(self.manager.detectedEvent) == 1 and next(iter(self.manager.detectedEvent)) == Accident.감지):
+                        #self.detectQueue.put(parsedEvent)
                 eventToSend = parsedEvent.copy()
                 if Accident.감지 in eventToSend:
                     eventToSend.remove(Accident.감지)
-                print(eventToSend)
                 if len(eventToSend) > 1:
-                    print(eventToSend)
                     eventToSend = '+'.join(eventToSend).encode("utf-8")
                     data = struct.pack(f"<IBB{len(eventToSend)}s", len(eventToSend) + 2, header, robotID, eventToSend)
                     self.manager.sendToGUI(data)
-                elif len(eventToSend) != 1:
-                    eventToSend = '+'.join(eventToSend).encode("utf-8")
+                elif len(eventToSend) == 1:
+                    eventToSend = b''
                     data = struct.pack(f"<IBB{len(eventToSend)}s", len(eventToSend) + 2, header, robotID, eventToSend)
                     self.manager.sendToGUI(data)
-                print(self.manager.detectedEvent)
                 
                 status = self.manager.robotStatus
                 if len(self.manager.detectedEvent) > 0:
@@ -212,13 +210,15 @@ class AIServerSocket(SocketHandler):
         filename = f"{event[0]}_{timestamp}.jpg"
         dirpath = "../images"
         filepath = os.path.join(dirpath, filename)
-        cv2.imwrite(filepath, frame)
-        if event[0] == '' or Accident.감지:
+        print("event[0]", event[0])
+        if event[0] == '' or event[0] == Accident.감지:
             return
+        cv2.imwrite(filepath, frame)
         _type = event[0]
         tid = self.dbCon.getData(f"select tid from EventType where typeName = '{_type}'")[0][0]
-
+        print("event[0]", event[0])
         eventList = event[1:]
+        print("eventlist:", eventList)
         if tid != 5:
             for each in eventList:
                 aid = 3
@@ -229,6 +229,7 @@ class AIServerSocket(SocketHandler):
                 values = (1, tid, sid, aid, filepath)
                 sql = "insert into Report (RID, TID, SID, AID, imgPath) values (%s, %s, %s, %s, %s)"
                 self.dbCon.myCursor.execute(sql, values)
+                print(aid, eid, sid)
         else:
             for each in eventList:
                 aid = self.dbCon.getData(f"select aid from Accident where accidentName = '{each}'")[0][0]
