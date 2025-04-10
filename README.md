@@ -3,7 +3,7 @@
 
 # 공사현장 안전감지 순찰로봇
 
-## 👉 [통합 영상](https://youtu.be/33UZJujoVBs?si=Ll3DOmD68eE4wvqI)
+## 👉 [통합 영상](https://youtu.be/Cz_f8TSdo1w)
 
 ## 👉 [발표 자료]([https://docs.google.com/presentation/d/1dvwK7o6es8Wn-Mrr18u-DYbreAsfyP4J_0AuqXVFU0I/edit?usp=sharing](https://docs.google.com/presentation/d/1E1gCpSgeWy28GYIsga0qjuvy6-IceTNsRVZ3a80uXaQ/edit?usp=sharing))
 
