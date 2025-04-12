@@ -66,13 +66,10 @@
 ## 1-5. 합업둘
 
 ### Jira
-<img src="https://github.com/user-attachments/assets/db3f8263-0f82-43fe-8503-d6b5577abafe" width="600" />
+[jara.webm](https://github.com/user-attachments/assets/afcca6c6-6cfc-4628-bf21-e0afef050549)
 
 ### Confluence
-<img src="https://github.com/user-attachments/assets/1b276306-d3c7-4e54-9697-2c8c8472415e" width="600" />
-
-
-
+<img src="https://github.com/user-attachments/assets/961891e8-fdac-4022-8efa-41a84195af33" width="1000" />
 
 
 # 2. 설계
